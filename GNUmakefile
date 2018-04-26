@@ -37,11 +37,31 @@
 # 
 # *****************************************************************************
 
-CC = gcc
-CXX = g++
+#CC = gcc
+#CXX = g++
 
-MPICC = mpicc
-MPICXX = mpicxx
+#MPICC = mpicc
+#MPICXX = mpicxx
+
+TYPE=".intel"
+
+MPI_DIR = $(HOME)/packages/mpich$(TYPE)
+#HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
+HDF_DIR = $(HOME)/packages/hdf5/build_intel_parallel/hdf5
+ZLIB_DIR = $(HOME)/packages/zlib-1.2.8/zlib$(TYPE)/lib
+
+CC  = $(MPI_DIR)/bin/mpicc
+CXX = $(MPI_DIR)/bin/mpicxx
+
+MPICC = $(MPI_DIR)/bin/mpicc
+MPICXX = $(MPI_DIR)/bin/mpicxx
+
+HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -L$(ZLIB_DIR) -lz
+HDF_INC = -I$(HDF_DIR)/include
+
+LIB = -L$(MPI_DIR)/lib $(HDF_LIB) 
+INC = -I$(MPI_DIR)/include $(HDF_ INC)
+
 
 all: fe-progs mpi-progs
 sql: fe-sqlite
@@ -63,7 +83,7 @@ BASE_CPPFLAGS := $(BLOSC_CPPFLAGS) -I. -D__STDC_CONSTANT_MACROS
 
 FEDIR = frontend
 FE_CFLAGS := -g -fPIC -O3 -fopenmp
-FE_CPPFLAGS := $(BASE_CPPFLAGS) -Ithirdparty/sqlite -DGENERICIO_NO_MPI
+FE_CPPFLAGS := $(BASE_CPPFLAGS) -Ithirdparty/sqlite $(INC) -DGENERICIO_NO_MPI
 
 MPIDIR = mpi
 MPI_CFLAGS := -g -O3 -fopenmp
@@ -130,10 +150,10 @@ BLOSC_O := \
 FE_BLOSC_O := $(addprefix $(FEDIR)/,$(BLOSC_O))
 
 $(FEDIR)/GenericIOPrint: $(FEDIR)/GenericIOPrint.o $(FEDIR)/GenericIO.o $(FE_BLOSC_O)
-	$(CXX) $(FE_CFLAGS) -o $@ $^ 
+	$(CXX) $(FE_CFLAGS) -o $@ $^ $(LIB) $(INC)
 
 $(FEDIR)/GenericIOVerify: $(FEDIR)/GenericIOVerify.o $(FEDIR)/GenericIO.o $(FE_BLOSC_O)
-	$(CXX) $(FE_CFLAGS) -o $@ $^ 
+	$(CXX) $(FE_CFLAGS) -o $@ $^ $(LIB) $(INC)
 
 FE_UNAME := $(shell uname -s)
 ifeq ($(FE_UNAME),Darwin)
@@ -143,10 +163,10 @@ FE_SHARED := -shared
 endif
 
 $(FEDIR)/libpygio.so: $(FEDIR)/GenericIO.o $(FEDIR)/python/lib/gio.o $(FE_BLOSC_O)
-	$(CXX) $(FE_CFLAGS) $(FE_SHARED) -o $@ $^
+	$(CXX) $(FE_CFLAGS) $(FE_SHARED) -o $@ $^ $(LIB) $(INC)
 
 $(FEDIR)/GenericIOSQLite.so: $(FEDIR)/GenericIOSQLite.o $(FEDIR)/GenericIO.o $(FE_BLOSC_O)
-	$(CXX) $(FE_CFLAGS) $(FE_SHARED) -o $@ $^
+	$(CXX) $(FE_CFLAGS) $(FE_SHARED) -o $@ $^ $(LIB) $(INC)
 
 SQLITE_CPPFLAGS := -DSQLITE_ENABLE_COLUMN_METADATA=1 -DSQLITE_DISABLE_DIRSYNC=1 -DSQLITE_ENABLE_FTS3=3 -DSQLITE_ENABLE_RTREE=1 -DSQLITE_ENABLE_UNLOCK_NOTIFY=1 -DSQLITE_ENABLE_LOAD_EXTENSION=1 -DHAVE_READLINE=1
 
@@ -173,19 +193,19 @@ $(MPIDIR)/%.o: %.cxx | $(MPIDIR)
 MPI_BLOSC_O := $(addprefix $(MPIDIR)/,$(BLOSC_O))
 
 $(MPIDIR)/GenericIOPrint: $(MPIDIR)/GenericIOPrint.o $(MPIDIR)/GenericIO.o $(MPI_BLOSC_O)
-	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ 
+	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ $(LIB) $(INC)
 
 $(MPIDIR)/GenericIOVerify: $(MPIDIR)/GenericIOVerify.o $(MPIDIR)/GenericIO.o $(MPI_BLOSC_O)
-	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ 
+	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ $(LIB) $(INC)
 
 $(MPIDIR)/GenericIOBenchmarkRead: $(MPIDIR)/GenericIOBenchmarkRead.o $(MPIDIR)/GenericIO.o $(MPI_BLOSC_O)
-	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ 
+	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ $(LIB) $(INC)
 
 $(MPIDIR)/GenericIOBenchmarkWrite: $(MPIDIR)/GenericIOBenchmarkWrite.o $(MPIDIR)/GenericIO.o $(MPI_BLOSC_O)
-	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ 
+	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ $(LIB) $(INC)
 
 $(MPIDIR)/GenericIORewrite: $(MPIDIR)/GenericIORewrite.o $(MPIDIR)/GenericIO.o $(MPI_BLOSC_O)
-	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ 
+	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ $(LIB) $(INC)
 
 frontend-progs: $(FEDIR)/GenericIOPrint $(FEDIR)/GenericIOVerify $(FEDIR)/libpygio.so
 fe-progs: frontend-progs

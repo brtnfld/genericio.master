@@ -54,8 +54,13 @@
 #else
 #include <fstream>
 #endif
+/*#ifndef GENERICIO_NO_HDF
+ *#include <hdf5.h> MSB
+ #endif*/
+#include <hdf5.h>
 
 #include <unistd.h>
+#define GENERICIO_HDF
 
 namespace gio {
 
@@ -101,6 +106,39 @@ public:
   void write(const void *buf, size_t count, off_t offset, const std::string &D);
 };
 #endif
+
+//#ifndef GENERICIO_NO_HDF
+class GenericFileIO_HDF : public GenericFileIO {
+public:
+  GenericFileIO_HDF(const MPI_Comm &C) : FH(h1), Comm(C) {}
+  virtual ~GenericFileIO_HDF();
+  hid_t get_fileid(void);
+  size_t get_NumElem(void);
+  uint64_t get_TotElem(void);
+  virtual void open(const std::string &FN, bool ForReading = false);
+  virtual void setSize(size_t sz);
+  virtual void read(void *buf, size_t count, off_t offset, const std::string &D);
+  virtual void write(const void *buf, size_t count, off_t offset, const std::string &D);
+  void write_hdf(const void *buf, size_t count, off_t offset, const std::string &D, hid_t dtype, hsize_t NElems, const void *CRC, hid_t gid, uint64_t Totnumel);
+  void read_hdf(void *buf, size_t count, off_t offset, const std::string &D, hid_t dtype, hsize_t NElems);
+
+protected:
+  hid_t h1;
+  hid_t FH;
+  size_t NumElem;
+  MPI_Comm Comm;
+};
+
+class GenericFileIO_HDFCollective : public GenericFileIO_HDF {
+public:
+  GenericFileIO_HDFCollective(const MPI_Comm &C) : GenericFileIO_HDF(C) {}
+
+public:
+  void read(void *buf, size_t count, off_t offset, const std::string &D);
+  void write(const void *buf, size_t count, off_t offset, const std::string &D);
+};
+//#endif 
+
 
 class GenericFileIO_POSIX : public GenericFileIO {
 public:
@@ -383,6 +421,9 @@ public:
   // Reading
   void openAndReadHeader(MismatchBehavior MB = MismatchDisallowed,
                          int EffRank = -1, bool CheckPartMap = true);
+
+  void openAndReadHeader_HDF(size_t *Numel, bool MustMatch = true, int EffRank = -1,
+                         bool CheckPartMap = true);
 
   int readNRanks();
   void readDims(int Dims[3]);
