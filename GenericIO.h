@@ -315,7 +315,8 @@ public:
   enum FileIO {
     FileIOMPI,
     FileIOPOSIX,
-    FileIOMPICollective
+    FileIOMPICollective,
+    FileIOHDF,
   };
 
 #ifndef GENERICIO_NO_MPI
@@ -374,6 +375,10 @@ public:
       PhysScale[Dim] = S;
     else
       std::fill(PhysScale,  PhysScale + 3, S);
+  }
+
+  void setTotElem(uint64_t S) {
+      TotElem = S;
   }
 
   template <typename T>
@@ -445,6 +450,7 @@ public:
   int readGlobalRankNumber(int EffRank = -1);
 
   void readData(int EffRank = -1, bool PrintStats = true, bool CollStats = true);
+  void readDataHDF(int EffRank = -1, bool PrintStats = true, bool CollStats = true);
 
   void getSourceRanks(std::vector<int> &SR);
 
@@ -531,6 +537,8 @@ protected:
   std::size_t NElems;
 
   double PhysOrigin[3], PhysScale[3];
+
+  uint64_t TotElem;
 
   unsigned FileIOType;
   int Partition;

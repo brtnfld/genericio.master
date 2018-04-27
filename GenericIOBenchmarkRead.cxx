@@ -95,16 +95,23 @@ int main(int argc, char *argv[]) {
   const char *EnvStr = getenv("GENERICIO_USE_MPIIO");
   if (EnvStr && string(EnvStr) == "1")
     Method = GenericIO::FileIOMPI;
+  const char *EnvStr1 = getenv("GENERICIO_USE_HDF");
+  if (EnvStr1 && string(EnvStr1) == "1")
+    Method = GenericIO::FileIOHDF;
 
   { // scope GIO
   GenericIO GIO(
     MPI_COMM_WORLD,
     mpiioName, Method);
-  GIO.openAndReadHeader(GenericIO::MismatchRedistribute);
 
-  MPI_Barrier(MPI_COMM_WORLD);
+  if (Method == GenericIO::FileIOHDF) {
+    GIO.openAndReadHeader_HDF(&Np,false, 0, false);
+  } else {
+    GIO.openAndReadHeader(GenericIO::MismatchRedistribute);
+    MPI_Barrier(MPI_COMM_WORLD);
+    Np = GIO.readNumElems();
+  }
 
-  Np = GIO.readNumElems();
 
   if (UseAOS) {
     pos.resize(Np + (GIO.requestedExtraSpace() + sizeof(pos_t) - 1)/sizeof(pos_t));
@@ -136,7 +143,13 @@ int main(int argc, char *argv[]) {
   GIO.addVariable("id", id, GenericIO::VarHasExtraSpace);
   GIO.addVariable("mask", mask, GenericIO::VarHasExtraSpace);
 
-  GIO.readData();
+  
+  if (Method == GenericIO::FileIOHDF) {
+    cout << "GIO.readDataHDF" << endl;
+    GIO.readDataHDF(0, false, false);
+  } else {
+    GIO.readData();
+  }
   } // destroy GIO prior to calling MPI_Finalize
 
   if (UseAOS) {
@@ -155,7 +168,9 @@ int main(int argc, char *argv[]) {
   mask.resize(Np);
 
   MPI_Barrier(MPI_COMM_WORLD);
+  cout << "ENDING2..." << endl;
   MPI_Finalize();
+  cout << "ENDING3..." << endl;
 
   return 0;
 }

@@ -47,20 +47,21 @@ TYPE=".intel"
 
 MPI_DIR = $(HOME)/packages/mpich$(TYPE)
 #HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
-HDF_DIR = $(HOME)/packages/hdf5/build_intel_parallel/hdf5
-ZLIB_DIR = $(HOME)/packages/zlib-1.2.8/zlib$(TYPE)/lib
+HDF_DIR = $(HOME)/packages/hdf5/build_gcc5.3_parallel/hdf5
+#ZLIB_DIR = $(HOME)/packages/zlib-1.2.8/zlib$(TYPE)/lib
 
-CC  = $(MPI_DIR)/bin/mpicc
-CXX = $(MPI_DIR)/bin/mpicxx
+CC  = mpicc
+CXX = mpicxx
 
-MPICC = $(MPI_DIR)/bin/mpicc
-MPICXX = $(MPI_DIR)/bin/mpicxx
+MPICC = mpicc
+MPICXX = mpicxx
 
-HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -L$(ZLIB_DIR) -lz
+#HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -L$(ZLIB_DIR) -lz
+HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -ldl
 HDF_INC = -I$(HDF_DIR)/include
 
-LIB = -L$(MPI_DIR)/lib $(HDF_LIB) 
-INC = -I$(MPI_DIR)/include $(HDF_ INC)
+LIB = $(HDF_LIB) 
+INC = $(HDF_INC)
 
 
 all: fe-progs mpi-progs
@@ -184,11 +185,11 @@ $(MPIDIR):
 
 $(MPIDIR)/%.o: %.c | $(MPIDIR)
 	mkdir -p $(dir $@)
-	$(MPICC) $(MPI_CFLAGS) $(MPI_CPPFLAGS) -c -o $@ $<
+	$(MPICC) $(MPI_CFLAGS) $(MPI_CPPFLAGS) -c -o $@ $< $(LIB) $(INC)
 
 $(MPIDIR)/%.o: %.cxx | $(MPIDIR)
 	mkdir -p $(dir $@)
-	$(MPICXX) $(MPI_CFLAGS) $(MPI_CPPFLAGS) -c -o $@ $<
+	$(MPICXX) $(MPI_CFLAGS) $(MPI_CPPFLAGS) -c -o $@ $< $(LIB) $(INC)
 
 MPI_BLOSC_O := $(addprefix $(MPIDIR)/,$(BLOSC_O))
 

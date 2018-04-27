@@ -128,6 +128,10 @@ int main(int argc, char *argv[]) {
   // Add a 2% variance to make things a bit more realistic.
   Np = double(Np)*(1.0 + (drand48() - 0.5)*0.02);
 
+  uint64_t glb_sum;
+
+  MPI_Allreduce(&Np, &glb_sum, 1, MPI_UINT64_T, MPI_SUM, MPI_COMM_WORLD);
+
   vector<POSVEL_T> xx, yy, zz, vx, vy, vz, phi;
   vector<ID_T> id;
   vector<MASK_T> mask;
@@ -140,12 +144,16 @@ int main(int argc, char *argv[]) {
   const char *EnvStr = getenv("GENERICIO_USE_MPIIO");
   if (EnvStr && string(EnvStr) == "1")
     Method = GenericIO::FileIOMPI;
+  const char *EnvStr1 = getenv("GENERICIO_USE_HDF");
+  if (EnvStr1 && string(EnvStr1) == "1")
+    Method = GenericIO::FileIOHDF;
 
   { // scope GIO
   GenericIO GIO(
     MPI_COMM_WORLD,
     mpiioName, Method);
   GIO.setNumElems(Np);
+  GIO.setTotElem(glb_sum);
 
   int CoordFlagsX = GenericIO::VarIsPhysCoordX;
   int CoordFlagsY = GenericIO::VarIsPhysCoordY;
