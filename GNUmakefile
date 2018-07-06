@@ -43,7 +43,7 @@
 #MPICC = mpicc
 #MPICXX = mpicxx
 
-TYPE=".intel"
+#TYPE=".intel"
 
 MPI_DIR = $(HOME)/packages/mpich$(TYPE)
 #HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
