@@ -82,12 +82,17 @@ BLOSC_CPPFLAGS := \
 
 BASE_CPPFLAGS := $(BLOSC_CPPFLAGS) -I. -D__STDC_CONSTANT_MACROS
 
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+    OPENMPFLAG=-fopenmp
+endif
+
 FEDIR = frontend
-FE_CFLAGS := -g -fPIC -O3 -fopenmp
+FE_CFLAGS := -g -fPIC -O3 $(OPENMPFLAG)
 FE_CPPFLAGS := $(BASE_CPPFLAGS) -Ithirdparty/sqlite $(INC) -DGENERICIO_NO_MPI
 
 MPIDIR = mpi
-MPI_CFLAGS := -g -O3 -fopenmp
+MPI_CFLAGS := -g -O3 $(OPENMPFLAG)
 MPI_CPPFLAGS := $(BASE_CPPFLAGS)
 
 $(FEDIR):
