@@ -47,20 +47,22 @@
 
 MPI_DIR = $(HOME)/packages/mpich$(TYPE)
 #HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
-HDF_DIR = $(HOME)/packages/hdf5/build_gcc5.3_parallel/hdf5
+HDF_DIR = $(HOME)/packages/hdf5/build.edison/hdf5
 #ZLIB_DIR = $(HOME)/packages/zlib-1.2.8/zlib$(TYPE)/lib
 
-CC  = mpicc
-CXX = mpicxx
+CC  = cc
+CXX = CC
 
-MPICC = mpicc
-MPICXX = mpicxx
+MPICC = cc
+MPICXX = CC
+#DEF = -DGENERICIO_HAVE_HDF
 
+ifeq ($(DEF),-DGENERICIO_HAVE_HDF)
 #HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -L$(ZLIB_DIR) -lz
 HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -ldl
 HDF_INC = -I$(HDF_DIR)/include
-
-LIB = $(HDF_LIB) 
+endif
+LIB = $(HDF_LIB) -lirc
 INC = $(HDF_INC)
 
 
@@ -80,7 +82,7 @@ BLOSC_CPPFLAGS := \
 	-Ithirdparty/blosc/internal-complibs/zstd-0.7.4/dictBuilder \
 	-Ithirdparty/blosc/internal-complibs/zstd-0.7.4/decompress
 
-BASE_CPPFLAGS := $(BLOSC_CPPFLAGS) -I. -D__STDC_CONSTANT_MACROS
+BASE_CPPFLAGS := $(BLOSC_CPPFLAGS) -I. -D__STDC_CONSTANT_MACROS $(DEF)
 
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
@@ -89,7 +91,7 @@ endif
 
 FEDIR = frontend
 FE_CFLAGS := -g -fPIC -O3 $(OPENMPFLAG)
-FE_CPPFLAGS := $(BASE_CPPFLAGS) -Ithirdparty/sqlite $(INC) -DGENERICIO_NO_MPI
+FE_CPPFLAGS := $(BASE_CPPFLAGS) -Ithirdparty/sqlite $(INC) -DGENERICIO_NO_MPI $(DEF)
 
 MPIDIR = mpi
 MPI_CFLAGS := -g -O3 $(OPENMPFLAG)
@@ -156,10 +158,10 @@ BLOSC_O := \
 FE_BLOSC_O := $(addprefix $(FEDIR)/,$(BLOSC_O))
 
 $(FEDIR)/GenericIOPrint: $(FEDIR)/GenericIOPrint.o $(FEDIR)/GenericIO.o $(FE_BLOSC_O)
-	$(CXX) $(FE_CFLAGS) -o $@ $^ $(LIB) $(INC)
+	$(CXX) $(FE_CFLAGS) -o $@ $^ $(LIB) $(INC) $(DEF)
 
 $(FEDIR)/GenericIOVerify: $(FEDIR)/GenericIOVerify.o $(FEDIR)/GenericIO.o $(FE_BLOSC_O)
-	$(CXX) $(FE_CFLAGS) -o $@ $^ $(LIB) $(INC)
+	$(CXX) $(FE_CFLAGS) -o $@ $^ $(LIB) $(INC) $(DEF)
 
 FE_UNAME := $(shell uname -s)
 ifeq ($(FE_UNAME),Darwin)
@@ -202,7 +204,7 @@ $(MPIDIR)/GenericIOPrint: $(MPIDIR)/GenericIOPrint.o $(MPIDIR)/GenericIO.o $(MPI
 	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ $(LIB) $(INC)
 
 $(MPIDIR)/GenericIOVerify: $(MPIDIR)/GenericIOVerify.o $(MPIDIR)/GenericIO.o $(MPI_BLOSC_O)
-	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ $(LIB) $(INC)
+	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ $(LIB) $(INC) 
 
 $(MPIDIR)/GenericIOBenchmarkRead: $(MPIDIR)/GenericIOBenchmarkRead.o $(MPIDIR)/GenericIO.o $(MPI_BLOSC_O)
 	$(MPICXX) $(MPI_CFLAGS) -o $@ $^ $(LIB) $(INC)

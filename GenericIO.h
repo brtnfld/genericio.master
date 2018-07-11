@@ -54,13 +54,11 @@
 #else
 #include <fstream>
 #endif
-/*#ifndef GENERICIO_NO_HDF
- *#include <hdf5.h> MSB
- #endif*/
+#ifdef GENERICIO_HAVE_HDF
 #include <hdf5.h>
+#endif
 
 #include <unistd.h>
-#define GENERICIO_HDF
 
 namespace gio {
 
@@ -107,7 +105,7 @@ public:
 };
 #endif
 
-//#ifndef GENERICIO_NO_HDF
+#ifdef GENERICIO_HAVE_HDF
 class GenericFileIO_HDF : public GenericFileIO {
 public:
   GenericFileIO_HDF(const MPI_Comm &C) : FH(h1), Comm(C) {}
@@ -137,7 +135,7 @@ public:
   void read(void *buf, size_t count, off_t offset, const std::string &D);
   void write(const void *buf, size_t count, off_t offset, const std::string &D);
 };
-//#endif 
+#endif 
 
 
 class GenericFileIO_POSIX : public GenericFileIO {

@@ -103,14 +103,17 @@ int main(int argc, char *argv[]) {
   GenericIO GIO(
     MPI_COMM_WORLD,
     mpiioName, Method);
-
+#ifdef GENERICIO_HAVE_HDF
   if (Method == GenericIO::FileIOHDF) {
     GIO.openAndReadHeader_HDF(&Np,false, 0, false);
   } else {
+#endif
     GIO.openAndReadHeader(GenericIO::MismatchRedistribute);
     MPI_Barrier(MPI_COMM_WORLD);
     Np = GIO.readNumElems();
+#ifdef GENERICIO_HAVE_HDF
   }
+#endif
 
 
   if (UseAOS) {
@@ -144,12 +147,16 @@ int main(int argc, char *argv[]) {
   GIO.addVariable("mask", mask, GenericIO::VarHasExtraSpace);
 
   
+#ifdef GENERICIO_HAVE_HDF
   if (Method == GenericIO::FileIOHDF) {
     cout << "GIO.readDataHDF" << endl;
     GIO.readDataHDF(0, false, false);
   } else {
+#endif
     GIO.readData();
+#ifdef GENERICIO_HAVE_HDF
   }
+#endif
   } // destroy GIO prior to calling MPI_Finalize
 
   if (UseAOS) {
