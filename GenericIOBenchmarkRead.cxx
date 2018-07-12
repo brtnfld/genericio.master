@@ -149,7 +149,7 @@ int main(int argc, char *argv[]) {
   
 #ifdef GENERICIO_HAVE_HDF
   if (Method == GenericIO::FileIOHDF) {
-    cout << "GIO.readDataHDF" << endl;
+    // cout << "GIO.readDataHDF" << endl;
     GIO.readDataHDF(0, false, false);
   } else {
 #endif
@@ -175,9 +175,9 @@ int main(int argc, char *argv[]) {
   mask.resize(Np);
 
   MPI_Barrier(MPI_COMM_WORLD);
-  cout << "ENDING2..." << endl;
+  //  cout << "ENDING2..." << endl;
   MPI_Finalize();
-  cout << "ENDING3..." << endl;
+  //  cout << "ENDING3..." << endl;
 
   return 0;
 }

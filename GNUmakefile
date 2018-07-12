@@ -40,29 +40,30 @@
 #CC = gcc
 #CXX = g++
 
-#MPICC = mpicc
-#MPICXX = mpicxx
+MPICC = mpicc
+MPICXX = mpicxx
 
 #TYPE=".intel"
 
 MPI_DIR = $(HOME)/packages/mpich$(TYPE)
-#HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
-HDF_DIR = $(HOME)/packages/hdf5/build.edison/hdf5
+HDF_DIR = $(HOME)/packages/hdf5/build.pic/hdf5
+#HDF_DIR = $(HOME)/packages/hdf5/build.edison/hdf5
 #ZLIB_DIR = $(HOME)/packages/zlib-1.2.8/zlib$(TYPE)/lib
 
-CC  = cc
-CXX = CC
+CC  = mpicc
+CXX = mpicxx
 
-MPICC = cc
-MPICXX = CC
-#DEF = -DGENERICIO_HAVE_HDF
+#MPICC = cc
+#MPICXX = CC
+DEF = -DGENERICIO_HAVE_HDF
 
 ifeq ($(DEF),-DGENERICIO_HAVE_HDF)
 #HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -L$(ZLIB_DIR) -lz
 HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -ldl
 HDF_INC = -I$(HDF_DIR)/include
 endif
-LIB = $(HDF_LIB) -lirc
+#LIB = $(HDF_LIB) -lirc
+LIB = $(HDF_LIB)
 INC = $(HDF_INC)
 
 

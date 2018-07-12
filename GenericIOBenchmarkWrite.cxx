@@ -225,7 +225,7 @@ int main(int argc, char *argv[]) {
   id.resize(Np);
   mask.resize(Np);
 
-  MPI_Barrier(MPI_COMM_WORLD);
+  //  MPI_Barrier(MPI_COMM_WORLD);
   MPI_Finalize();
 
   return 0;

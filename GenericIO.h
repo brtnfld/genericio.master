@@ -106,6 +106,11 @@ public:
 #endif
 
 #ifdef GENERICIO_HAVE_HDF
+typedef struct crc_s {
+  uint64_t CRC64;
+  size_t  CRC64_size;
+} crc;
+
 class GenericFileIO_HDF : public GenericFileIO {
 public:
   GenericFileIO_HDF(const MPI_Comm &C) : FH(h1), Comm(C) {}

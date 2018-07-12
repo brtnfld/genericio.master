@@ -227,9 +227,14 @@ size_t GenericFileIO_HDF::get_NumElem() {
   // setup file access template with parallel IO access.
   fapl_id = H5Pcreate (H5P_FILE_ACCESS);
   ret = H5Pset_fapl_mpio(fapl_id, Comm, MPI_INFO_NULL);
+  H5Pset_libver_bounds(fapl_id, H5F_LIBVER_LATEST, H5F_LIBVER_LATEST);
+  H5Pset_fclose_degree(fapl_id,H5F_CLOSE_WEAK);
+  H5Pset_coll_metadata_write(fapl_id, 1);
+  H5Pset_all_coll_metadata_ops(fapl_id, 1 );
+
   FileName = FN;
 
-  cout << "in open" << endl;
+  //  cout << "in open" << endl;
 
   if ( ForReading) {
     if( (fid = H5Fopen(const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,fapl_id)) < 0)
@@ -262,7 +267,7 @@ size_t GenericFileIO_HDF::get_NumElem() {
 
   }
 
-  cout << "done open" << endl;
+  //  cout << "done open" << endl;
 }
 
 void GenericFileIO_HDF::setSize(size_t sz) {
@@ -349,7 +354,6 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, off_t offset,
   MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
   MPI_Comm_size(MPI_COMM_WORLD, &commRanks); 
 
-
   adims[0] = (hsize_t)commRanks;
   dims[0] = (hsize_t)Totnumel;
 
@@ -371,7 +375,11 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, off_t offset,
 
   delete[] c_str;
 
-    /* set up dimensions of the slab this process accesses */
+
+  std::strcpy(c_str3, D.c_str());
+  strcat(c_str3, "_CRC");
+ 
+  /* set up dimensions of the slab this process accesses */
 
   start[0] = commRank*Totnumel/commRanks;
 
@@ -385,48 +393,50 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, off_t offset,
 
   sizedims[0] = numel;
 
-    mem_dataspace = H5Screate_simple (1, sizedims, NULL);
+  mem_dataspace = H5Screate_simple (1, sizedims, NULL);
+  
+  hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
+  H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
 
-    // write data independently
-    ret = H5Dwrite(dataset, dtype, mem_dataspace, file_dataspace,
-		   H5P_DEFAULT, (void *)buf);
+  // write data
+  ret = H5Dwrite(dataset, dtype, mem_dataspace, file_dataspace,
+  		 plist_id, (void *)buf);
+   
+  // release dataspaceID
+  H5Pclose (plist_id);
+  H5Sclose (file_dataspace);
+  H5Sclose (mem_dataspace);
+  H5Sclose (sid);
 
-    // release dataspaceID
-    H5Sclose (file_dataspace);
-    H5Sclose (mem_dataspace);
-    H5Sclose (sid);
-    ret=H5Dclose(dataset);
+  //
+  // Create the CRC dataset
+  //
+  ret=H5Dclose(dataset);
 
-    
-    //
-    // Create the CRC dataset
-    //
-
-    std::strcpy(c_str3, D.c_str());
-    strcat(c_str3, "_CRC");
-
-    file_dataspace = H5Screate_simple (1, adims, NULL);
-    dataset = H5Dcreate2(gid, c_str3, H5T_NATIVE_ULONG, file_dataspace,
+#if 1
+  file_dataspace = H5Screate(H5S_SCALAR);
+  dataset = H5Dcreate2(gid, c_str3, H5T_NATIVE_ULONG, file_dataspace,
 			H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    delete[] c_str3;
 
-    start[0] =  commRank;
+  delete[] c_str3;
+ 
 
-    ret=H5Sselect_elements(file_dataspace, H5S_SELECT_SET, 1, start);
-
-    sizedims[0] = 1;
-
-    mem_dataspace = H5Screate_simple (1, sizedims, NULL);
-
-    // write data independently
+  if( commRank == 0 ) {
+    mem_dataspace = H5Screate(H5S_SCALAR);
     ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, file_dataspace,
 		   H5P_DEFAULT, (void *)CRC);
+  } else {
+    mem_dataspace = H5Screate(H5S_NULL);
+    ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, mem_dataspace,
+		   H5P_DEFAULT, NULL);
+  }
+  
+  H5Sclose (file_dataspace);
+  H5Sclose (mem_dataspace);
+  H5Dclose (dataset);
+#endif
 
-    H5Sclose (file_dataspace);
-    H5Sclose (mem_dataspace);
-    H5Dclose (dataset);
-
-
+  cout << "leaving hdf_write" << endl;
 //    while (count > 0) {
 //      MPI_Status status;
 //     if (MPI_File_write_at(FH, offset, (void *) buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
@@ -1103,7 +1113,40 @@ nocomp:
 #ifdef GENERICIO_HAVE_HDF
       if (FileIOType == FileIOHDF) {
 	hid_t dtype;
-	CRC = crc64_omp(Data, NElems);
+	// CRC calculation 
+	crc send;
+	//	cout << Vars[i].Size << Vars[i].Name << endl;
+	send.CRC64 = crc64_omp(Data, NElems*Vars[i].Size);
+	send.CRC64_size = NElems*Vars[i].Size;
+	struct crc_s *rbufv;
+
+	int          blocklengths[2] = {1,1};
+	MPI_Datatype types[2] = {MPI_UINT64_T, MPI_LONG_LONG_INT };
+	MPI_Datatype mpi_crc_type;
+	MPI_Aint     offsets[2];
+
+	offsets[0] = offsetof(crc, CRC64);
+	offsets[1] = offsetof(crc, CRC64_size);
+
+	MPI_Type_create_struct(2, blocklengths, offsets, types, &mpi_crc_type);
+	MPI_Type_commit(&mpi_crc_type);
+
+	rbufv = NULL;
+	if(Rank == 0) {
+	  rbufv = new crc_s [NRanks*sizeof(struct crc_s)];
+	}
+	MPI_Gather( &send, 1, mpi_crc_type, rbufv, 1, mpi_crc_type, 0, MPI_COMM_WORLD);
+	if(Rank == 0) {
+	  uint64_t CRC_sum = 0;
+	  for (int k =0; k<NRanks; k++) {
+	    CRC_sum = crc64_combine(CRC_sum, rbufv[k].CRC64, rbufv[k].CRC64_size);
+	  }
+	  delete rbufv;
+	  CRC = CRC_sum;
+	  cout << "CRC_sum" << CRC << endl;
+	} else
+	  CRC = 0;
+
 	if( Vars[i].Name.compare("id") == 0) {
 	  dtype = H5T_NATIVE_LONG;
 	} else if( Vars[i].Name.compare("mask") == 0) {
@@ -1127,6 +1170,7 @@ nocomp:
 
     Offset += WriteSize + CRCSize;
   }
+  printf("finished loop %d\n", Rank);
 #ifdef GENERICIO_HAVE_HDF
   if (FileIOType == FileIOHDF)
     ret = H5Gclose(gid);
@@ -1249,7 +1293,7 @@ void GenericIO::readHeaderLeader(void *GHPtr, MismatchBehavior MB, int NRanks,
   NRanks = 1;
 #endif
 
-  cout << "openAndReadHeader_HDF" << endl;
+  //  cout << "openAndReadHeader_HDF" << endl;
 
 #ifndef GENERICIO_NO_MPI
   GenericIO GIO(MPI_COMM_SELF, FileName, FileIOType);
@@ -1813,7 +1857,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
   hsize_t start[1];			/* for hyperslab setting */
   hsize_t hypercount[1], stride[1];	/* for hyperslab setting */
   hsize_t sizedims[1];
-  uint64_t CRCv[1], CRC_loc;
+  uint64_t CRCv, CRC_loc;
   hsize_t dim_size[1];
   uint64_t read1_cs = 0;
 
@@ -1845,37 +1889,42 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 
 //   int NErrs[3] = { 0, 0, 0 };
 
-   v.push_back("/Variables/id");
-   v.push_back("/Variables/mask");
-   v.push_back("/Variables/phi");
-   v.push_back("/Variables/vx");
-   v.push_back("/Variables/vy");
-   v.push_back("/Variables/vz");
-   v.push_back("/Variables/x");
-   v.push_back("/Variables/y");
-   v.push_back("/Variables/z");
+
+  v.push_back("/Variables/id");
+  v.push_back("/Variables/mask");
+  v.push_back("/Variables/phi");
+  v.push_back("/Variables/vx");
+  v.push_back("/Variables/vy");
+  v.push_back("/Variables/vz");
+  v.push_back("/Variables/x");
+  v.push_back("/Variables/y");
+  v.push_back("/Variables/z");
 
    GenericFileIO_HDF *gfio_hdf = dynamic_cast<GenericFileIO_HDF *> (FH.get());
    fid = gfio_hdf->get_fileid();
    dims[0] = gfio_hdf->get_NumElem();
    //cout << dims[0] << endl;
 
+   //sizedims[0] = 1;
+    //   mem_dataspace_CRC = H5Screate_simple (1, sizedims, NULL);
 
-    sizedims[0] = 1;
-    mem_dataspace_CRC = H5Screate_simple (1, sizedims, NULL);
+   mem_dataspace_CRC = H5Screate(H5S_SCALAR);
 
    for (size_t i = 0; i < Vars.size(); ++i) {
+
 //     uint64_t Offset = RH->Start;
      bool VarFound = false;
 
      Vars[i].Name = v[i];
+     //   cout << "var name " << Vars[i].Name << endl;
+     //  cout << "var size " << Vars[i].Size << endl;
+
 
      std::strcpy(c_str, v[i].c_str());
 
      // cout << c_str << endl;
      // cout << fid << endl;
      dset = H5Dopen(fid, c_str, H5P_DEFAULT);
-
 
      file_dataspace = H5Dget_space (dset);
 
@@ -1888,8 +1937,8 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
      hypercount[0] = dims[0];
      stride[0] = 1;
 
-     // cout << start[0] << endl;
-     // cout <<  hypercount[0] << endl;
+     //  cout << start[0] << endl;
+     //  cout <<  hypercount[0] << endl;
 
      ret=H5Sselect_hyperslab(file_dataspace, H5S_SELECT_SET, start, stride,
  	    hypercount, NULL);
@@ -1898,75 +1947,123 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 
      mem_dataspace = H5Screate_simple (1, sizedims, NULL);
 
-     // Vars[0].Data[0] = 22;
-
      void *Data = Vars[i].Data;
 
      if (!Data) cout << "NULLISH" << endl;
 
      dxpl_id = H5Pcreate (H5P_DATASET_XFER);
+     H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
+
      //H5Pset_dxpl_checksum_ptr(dxpl_id, &read1_cs);
 
-     if(Rank==0) printf("Reading Dataset  %s \n",c_str);
+     size_t Vsize;
+
+     //   if(Rank==0) printf("Reading Dataset  %s \n",c_str);
      if( Vars[i].Name.compare("/Variables/id") == 0) {
        dtype = H5T_NATIVE_LONG;
+       Vsize = sizeof(long);
      } else if( Vars[i].Name.compare("/Variables/mask") == 0) {
        dtype = H5T_NATIVE_B16;
+       Vsize = 2;
      } else  {
        dtype = H5T_NATIVE_FLOAT;
+       Vsize = sizeof(float);
      }
      ret = H5Dread(dset, dtype, mem_dataspace, file_dataspace, dxpl_id, Data);
-     
-     cout << "H5Dread" << ret << endl;
-
-     H5Pclose(dxpl_id);
-
-     ret = H5Dclose (dset);
-     cout << fid << endl;
-
+#if 0
+    if(Vars[i].Name.compare("/Variables/id") == 0) {
+      for(size_t j = 0; j < dims[0]; ++j){
+	cout << j << " " << ((size_t *)Data)[j] << endl;
+      }
+    }
+#endif
+    
+    H5Pclose(dxpl_id);
      ret = H5Sclose (mem_dataspace);
-     cout << "100strcpy" << ret << endl;
      ret = H5Sclose (file_dataspace);
-     cout << "99strcpy" << ret << endl;
+     ret = H5Dclose (dset);
 
-     cout << "3strcpy" << ret << endl;
-      std::strcpy(c_str3, c_str);
-     cout << "3asdfstrcpy" << ret << endl;
-      strcat(c_str3, "_CRC");
+     std::strcpy(c_str3, c_str);
+     strcat(c_str3, "_CRC");
 
-     cout << "2strcpy" << ret << endl;
-      if(Rank==0) printf("Reading in CRC for Dataset %s \n",c_str3);
+     //  cout << "2H5Dread" << ret << endl;
+     //    if(Rank==0) printf("Reading in CRC for Dataset %s \n",c_str3);
 
+      //  cout << "2H5Dread" << ret << endl;
+#if 1
       attr_id = H5Dopen(fid, c_str3, H5P_DEFAULT);
       file_dataspace_CRC = H5Dget_space(attr_id);
 
-      start[0] = Rank;
-      ret=H5Sselect_elements(file_dataspace_CRC, H5S_SELECT_SET, 1, start);
+      ret = H5Dread(attr_id, H5T_NATIVE_ULONG, mem_dataspace_CRC, file_dataspace_CRC, H5P_DEFAULT, &CRCv);
+      //  cout << "var size " << Vars[i].Size << endl;
 
-      ret = H5Dread(attr_id, H5T_NATIVE_ULONG, mem_dataspace_CRC, file_dataspace_CRC, H5P_DEFAULT, CRCv);
+      // CRC calculation 
+      crc send; 
+      // send.CRC64_size = dims[0]*Vars[i].Size; // MSB not sure why it does not work
+      send.CRC64_size = dims[0]*Vsize;
+      send.CRC64 = crc64_omp(Data, send.CRC64_size);
+
+      struct crc_s *rbufv;
+      
+      int          blocklengths[2] = {1,1};
+      MPI_Datatype types[2] = {MPI_UINT64_T, MPI_LONG_LONG_INT };
+      MPI_Datatype mpi_crc_type;
+      MPI_Aint     offsets[2];
+      
+      offsets[0] = offsetof(crc, CRC64);
+      offsets[1] = offsetof(crc, CRC64_size);
+
+      MPI_Type_create_struct(2, blocklengths, offsets, types, &mpi_crc_type);
+      MPI_Type_commit(&mpi_crc_type);
+
+      rbufv = NULL;
+      if(Rank == 0)
+	rbufv = new crc_s [commRanks*sizeof(struct crc_s)];
+
+      MPI_Gather( &send, 1, mpi_crc_type, rbufv, 1, mpi_crc_type, 0, MPI_COMM_WORLD);
+      
+      if(Rank == 0) {
+	uint64_t CRC_sum = 0;
+	for (int k=0; k<commRanks; k++) {
+	  CRC_sum = crc64_combine(CRC_sum, rbufv[k].CRC64, rbufv[k].CRC64_size);
+	}
+	printf("Checking CRC for Dataset %s ",c_str3);
+	if (CRCv != CRC_sum) {
+	  cout << "CRC error " << CRCv << " " << CRC_sum << endl;
+	} else {
+	  printf("PASSED \n",c_str3);
+	}
+	free(rbufv);
+      }
+
+
+
+
+
+      //     cout << CRCv << endl;
 
 //     if(Vars[i].Name.compare("/Variables/phi") == 0) {
 //       for(size_t j = 0; j < dims[0]; ++j){
 // 	cout << j << " " << ((float*)Data)[j] << endl;
 //       }
 //     }
-      CRC_loc = crc64_omp(Vars[i].Data, dims[0]);
+      //   CRC_loc = crc64_omp(Vars[i].Data, dims[0]);
 
       ret = H5Dclose(attr_id);
       ret = H5Sclose(file_dataspace_CRC);
       
-      if(Rank==0) printf("Checking in CRC for Dataset %s ",c_str3);
-      if (CRCv[0] != CRC_loc) {
+   //    if(Rank==0) printf("Checking in CRC for Dataset %s ",c_str3);
+//       if (CRCv[0] != CRC_loc) {
 	
-        cout << "CRC error " << CRCv[0] << " " << CRC_loc << endl;
-      } else {
+//         cout << "CRC error " << CRCv[0] << " " << CRC_loc << endl;
+//       } else {
 	
-      if(Rank==0) printf("PASSED \n",c_str3);
-      }
-
+//       if(Rank==0) printf("PASSED \n",c_str3);
+//       }
+#endif
    }
-
    
+   H5Sclose(mem_dataspace_CRC);
    //   ret = H5Pclose(fapl_id);
 
    
