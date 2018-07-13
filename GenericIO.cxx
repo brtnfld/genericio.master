@@ -337,7 +337,7 @@ void GenericFileIO_HDF::write(const void *buf, size_t count, off_t offset,
 				   const std::string &D) {
 }
 
-void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, off_t offset,
+void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset,
 				  const std::string &D, hid_t dtype, hsize_t numel, const void *CRC, hid_t gid, uint64_t Totnumel) {
 
   hid_t sid, dataset,file_dataspace, aid, mem_dataspace, attr, fid, aspace;
@@ -358,7 +358,7 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, off_t offset,
   dims[0] = (hsize_t)Totnumel;
 
 
-  cout << "inside hdf_write" << endl;
+  // cout << "inside hdf_write" << endl;
 
   // --------------------------
   // Define the dimensions of the overall datasets
@@ -375,15 +375,18 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, off_t offset,
 
   delete[] c_str;
 
-
   std::strcpy(c_str3, D.c_str());
   strcat(c_str3, "_CRC");
  
   /* set up dimensions of the slab this process accesses */
 
-  start[0] = commRank*Totnumel/commRanks;
+  start[0] = offset; // commRank*Totnumel/commRanks;
 
   hypercount[0] = numel;
+
+  // cout << commRank << " " << start[0] << endl;
+  //cout << commRank << "count " << hypercount[0] << endl;
+
   stride[0] = 1;
 
   file_dataspace = H5Dget_space (dataset);
@@ -391,9 +394,10 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, off_t offset,
   ret=H5Sselect_hyperslab(file_dataspace, H5S_SELECT_SET, start, stride,
 			  hypercount, NULL);
 
-  sizedims[0] = numel;
+  mem_dataspace = H5Screate_simple (1, hypercount, NULL);
 
-  mem_dataspace = H5Screate_simple (1, sizedims, NULL);
+//    MPI_Barrier(MPI_COMM_WORLD);
+//    abort();
   
   hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
   H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
@@ -420,7 +424,6 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, off_t offset,
 
   delete[] c_str3;
  
-
   if( commRank == 0 ) {
     mem_dataspace = H5Screate(H5S_SCALAR);
     ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, file_dataspace,
@@ -436,7 +439,7 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, off_t offset,
   H5Dclose (dataset);
 #endif
 
-  cout << "leaving hdf_write" << endl;
+  //  cout << "leaving hdf_write" << endl;
 //    while (count > 0) {
 //      MPI_Status status;
 //     if (MPI_File_write_at(FH, offset, (void *) buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
@@ -886,6 +889,7 @@ nocomp:
     }
   }
 
+
   double StartTime = MPI_Wtime();
 
   if (SplitRank == 0) {
@@ -982,6 +986,7 @@ nocomp:
       FileSize = RH[-1].Start + LastData;
     }
 
+    
     // Now that the starting offset has been computed, send it back to each rank.
     MPI_Scatter(&Header[GH->RanksStart], sizeof(RHLocal),
                 MPI_BYTE, &RHLocal, sizeof(RHLocal),
@@ -1119,6 +1124,7 @@ nocomp:
 	send.CRC64 = crc64_omp(Data, NElems*Vars[i].Size);
 	send.CRC64_size = NElems*Vars[i].Size;
 	struct crc_s *rbufv;
+	uint64_t *sbufv;
 
 	int          blocklengths[2] = {1,1};
 	MPI_Datatype types[2] = {MPI_UINT64_T, MPI_LONG_LONG_INT };
@@ -1135,17 +1141,29 @@ nocomp:
 	if(Rank == 0) {
 	  rbufv = new crc_s [NRanks*sizeof(struct crc_s)];
 	}
+	sbufv = new uint64_t [NRanks*sizeof(uint64_t)];
+
 	MPI_Gather( &send, 1, mpi_crc_type, rbufv, 1, mpi_crc_type, 0, MPI_COMM_WORLD);
 	if(Rank == 0) {
 	  uint64_t CRC_sum = 0;
-	  for (int k =0; k<NRanks; k++) {
+	  sbufv[0] = 0;
+	    int k;
+	  for (k =0; k<NRanks; k++) {
 	    CRC_sum = crc64_combine(CRC_sum, rbufv[k].CRC64, rbufv[k].CRC64_size);
+	    // find offsets
+	    if(k > 0)
+	      sbufv[k] = sbufv[k-1] + rbufv[k-1].CRC64_size/Vars[i].Size;
+	    // cout << k << " : " << sbufv[k] << endl;
 	  }
 	  delete rbufv;
 	  CRC = CRC_sum;
 	  cout << "CRC_sum" << CRC << endl;
 	} else
 	  CRC = 0;
+
+	uint64_t Offsets;
+	MPI_Scatter( sbufv, 1, MPI_UINT64_T, &Offsets, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); 
+	delete sbufv;
 
 	if( Vars[i].Name.compare("id") == 0) {
 	  dtype = H5T_NATIVE_LONG;
@@ -1154,7 +1172,7 @@ nocomp:
 	}else {
 	  dtype = H5T_NATIVE_FLOAT;
 	}
-	gfio_hdf->write_hdf(Data, WriteSize + CRCSize, Offset, Vars[i].Name, dtype, NElems, &CRC, gid, TotElem);
+	gfio_hdf->write_hdf(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem);
       } else 
 #endif
 	crc64_invert(CRC, CRCLoc);
@@ -1170,7 +1188,7 @@ nocomp:
 
     Offset += WriteSize + CRCSize;
   }
-  printf("finished loop %d\n", Rank);
+  //  printf("finished loop %d\n", Rank);
 #ifdef GENERICIO_HAVE_HDF
   if (FileIOType == FileIOHDF)
     ret = H5Gclose(gid);

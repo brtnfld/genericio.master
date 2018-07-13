@@ -122,7 +122,7 @@ public:
   virtual void setSize(size_t sz);
   virtual void read(void *buf, size_t count, off_t offset, const std::string &D);
   virtual void write(const void *buf, size_t count, off_t offset, const std::string &D);
-  void write_hdf(const void *buf, size_t count, off_t offset, const std::string &D, hid_t dtype, hsize_t NElems, const void *CRC, hid_t gid, uint64_t Totnumel);
+  void write_hdf(const void *buf, size_t count, uint64_t offset, const std::string &D, hid_t dtype, hsize_t NElems, const void *CRC, hid_t gid, uint64_t Totnumel);
   void read_hdf(void *buf, size_t count, off_t offset, const std::string &D, hid_t dtype, hsize_t NElems);
 
 protected:
