@@ -396,9 +396,6 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 
   mem_dataspace = H5Screate_simple (1, hypercount, NULL);
 
-//    MPI_Barrier(MPI_COMM_WORLD);
-//    abort();
-  
   hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
   H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
 
@@ -417,7 +414,6 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
   //
   ret=H5Dclose(dataset);
 
-#if 1
   file_dataspace = H5Screate(H5S_SCALAR);
   dataset = H5Dcreate2(gid, c_str3, H5T_NATIVE_ULONG, file_dataspace,
 			H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
@@ -437,21 +433,7 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
   H5Sclose (file_dataspace);
   H5Sclose (mem_dataspace);
   H5Dclose (dataset);
-#endif
 
-  //  cout << "leaving hdf_write" << endl;
-//    while (count > 0) {
-//      MPI_Status status;
-//     if (MPI_File_write_at(FH, offset, (void *) buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
-//       throw runtime_error("Unable to write " + D + " to file: " + FileName);
-
-//     int scount;
-//     (void) MPI_Get_count(&status, MPI_BYTE, &scount);
-
-//     count -= scount;
-//     buf = ((char *) buf) + scount;
-//     offset += scount;
-//    }
 }
 
 void GenericFileIO_HDFCollective::read(void *buf, size_t count, off_t offset,
@@ -1164,6 +1146,7 @@ nocomp:
 	uint64_t Offsets;
 	MPI_Scatter( sbufv, 1, MPI_UINT64_T, &Offsets, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); 
 	delete sbufv;
+	MPI_Type_free(&mpi_crc_type);
 
 	if( Vars[i].Name.compare("id") == 0) {
 	  dtype = H5T_NATIVE_LONG;
@@ -1208,7 +1191,7 @@ nocomp:
 
   if (Rank == 0) {
     double Rate = ((double) FileSize) / MaxTotalTime / (1024.*1024.);
-    cout << "Wrote " << Vars.size() << " variables to " << FileName <<
+    cout << NRanks << " Procs Wrote " << Vars.size() << " variables to " << FileName <<
             " (" << FileSize << " bytes) in " << MaxTotalTime << "s: " <<
             Rate << " MB/s" << endl;
   }
@@ -1858,7 +1841,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
   std::vector<std::string> v;
 #ifndef GENERICIO_NO_MPI
   MPI_Comm_rank(Comm, &Rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &commRanks);
+  MPI_Comm_size(Comm, &commRanks);
 #else
   Rank = 0;
 #endif
@@ -1934,7 +1917,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
      bool VarFound = false;
 
      Vars[i].Name = v[i];
-     //   cout << "var name " << Vars[i].Name << endl;
+     //cout << "var name " << Vars[i].Name << endl;
      //  cout << "var size " << Vars[i].Size << endl;
 
 
@@ -1950,8 +1933,33 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 
 
 //      //     FH.get()->read(Data, ReadSize, Offset, Vars[i].Name);
+     
+     uint64_t *Sendv = NULL;
+     if(Rank == 0)
+       Sendv = new uint64_t [commRanks*sizeof(uint64_t)];
 
-     start[0] =  Rank*dim_size[0]/commRanks;
+     MPI_Gather( &dims[0], 1, MPI_UINT64_T, Sendv, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); // fix comm MSB
+
+     uint64_t *sbufv;
+     sbufv = new uint64_t [commRanks*sizeof(uint64_t)];
+
+     if(Rank == 0) {
+       sbufv[0] = 0;
+       int k;
+       for (k =0; k<commRanks; k++) {
+	 // find offsets
+	 if(k > 0)
+	   sbufv[k] = sbufv[k-1] + Sendv[k-1];
+	 //	 cout << k << " : " << sbufv[k] << endl;
+       }
+       delete [] Sendv;
+     }
+
+     uint64_t Offsets;
+     MPI_Scatter( sbufv, 1, MPI_UINT64_T, &Offsets, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); 
+     delete [] sbufv;
+
+     start[0] =  Offsets;
      hypercount[0] = dims[0];
      stride[0] = 1;
 
@@ -1966,7 +1974,6 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
      mem_dataspace = H5Screate_simple (1, sizedims, NULL);
 
      void *Data = Vars[i].Data;
-
      if (!Data) cout << "NULLISH" << endl;
 
      dxpl_id = H5Pcreate (H5P_DATASET_XFER);
@@ -1980,14 +1987,18 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
      if( Vars[i].Name.compare("/Variables/id") == 0) {
        dtype = H5T_NATIVE_LONG;
        Vsize = sizeof(long);
+       Data = new long [dims[0]];
      } else if( Vars[i].Name.compare("/Variables/mask") == 0) {
        dtype = H5T_NATIVE_B16;
        Vsize = 2;
+       Data = new short int [dims[0]];
      } else  {
        dtype = H5T_NATIVE_FLOAT;
        Vsize = sizeof(float);
+       Data = new float [dims[0]];
      }
      ret = H5Dread(dset, dtype, mem_dataspace, file_dataspace, dxpl_id, Data);
+
 #if 0
     if(Vars[i].Name.compare("/Variables/id") == 0) {
       for(size_t j = 0; j < dims[0]; ++j){
@@ -2046,18 +2057,13 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 	  CRC_sum = crc64_combine(CRC_sum, rbufv[k].CRC64, rbufv[k].CRC64_size);
 	}
 	printf("Checking CRC for Dataset %s ",c_str3);
-	if (CRCv != CRC_sum) {
+	if (CRCv != CRC_sum || CRC_sum == 0) {
 	  cout << "CRC error " << CRCv << " " << CRC_sum << endl;
 	} else {
 	  printf("PASSED \n",c_str3);
 	}
 	free(rbufv);
       }
-
-
-
-
-
       //     cout << CRCv << endl;
 
 //     if(Vars[i].Name.compare("/Variables/phi") == 0) {
@@ -2078,11 +2084,12 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 	
 //       if(Rank==0) printf("PASSED \n",c_str3);
 //       }
+      MPI_Type_free(&mpi_crc_type);
 #endif
+      Data = NULL;
    }
    
    H5Sclose(mem_dataspace_CRC);
-   //   ret = H5Pclose(fapl_id);
 
    
    //ret=H5Fclose(fid);
