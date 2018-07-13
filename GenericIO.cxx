@@ -2056,11 +2056,11 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 	for (int k=0; k<commRanks; k++) {
 	  CRC_sum = crc64_combine(CRC_sum, rbufv[k].CRC64, rbufv[k].CRC64_size);
 	}
-	printf("Checking CRC for Dataset %s ",c_str3);
+	cout << "Checking CRC for Dataset " << c_str3 ;
 	if (CRCv != CRC_sum || CRC_sum == 0) {
-	  cout << "CRC error " << CRCv << " " << CRC_sum << endl;
+	  cout << " CRC error " << CRCv << " " << CRC_sum << endl;
 	} else {
-	  printf("PASSED \n",c_str3);
+	  cout << " PASSED" << endl;
 	}
 	free(rbufv);
       }
