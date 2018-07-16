@@ -218,7 +218,8 @@ size_t GenericFileIO_HDF::get_NumElem() {
   /* Transactions  */
   int commRank;
 
-  MPI_Comm_rank(Comm, &commRank);
+  //  MPI_Comm_rank(Comm, &commRank);
+  MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
   FileName = FN;
 
 //   filetype = H5Tcopy (H5T_C_S1);
@@ -226,7 +227,7 @@ size_t GenericFileIO_HDF::get_NumElem() {
 
   // setup file access template with parallel IO access.
   fapl_id = H5Pcreate (H5P_FILE_ACCESS);
-  ret = H5Pset_fapl_mpio(fapl_id, Comm, MPI_INFO_NULL);
+  ret = H5Pset_fapl_mpio(fapl_id, MPI_COMM_WORLD, MPI_INFO_NULL);
   H5Pset_libver_bounds(fapl_id, H5F_LIBVER_LATEST, H5F_LIBVER_LATEST);
   H5Pset_fclose_degree(fapl_id,H5F_CLOSE_WEAK);
   H5Pset_coll_metadata_write(fapl_id, 1);
@@ -261,10 +262,16 @@ size_t GenericFileIO_HDF::get_NumElem() {
     ret = H5Sclose (space);
 
     int commRanks;
+    int Rank;
     MPI_Comm_size(MPI_COMM_WORLD, &commRanks);
+    MPI_Comm_rank(MPI_COMM_WORLD, &Rank);    // MSB, why does comm not work?
 
     NumElem = dims[0]/commRanks;
 
+    if(Rank+1 <= dims[0]%commRanks)
+      NumElem +=1;
+
+    //   printf("%d\n",NumElem);
   }
 
   //  cout << "done open" << endl;
@@ -1904,7 +1911,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
    GenericFileIO_HDF *gfio_hdf = dynamic_cast<GenericFileIO_HDF *> (FH.get());
    fid = gfio_hdf->get_fileid();
    dims[0] = gfio_hdf->get_NumElem();
-   //cout << dims[0] << endl;
+   // cout << Rank << "  " << dims[0] << endl;
 
    //sizedims[0] = 1;
     //   mem_dataspace_CRC = H5Screate_simple (1, sizedims, NULL);
@@ -2000,11 +2007,13 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
      ret = H5Dread(dset, dtype, mem_dataspace, file_dataspace, dxpl_id, Data);
 
 #if 0
+     if(Rank == 4) {
     if(Vars[i].Name.compare("/Variables/id") == 0) {
       for(size_t j = 0; j < dims[0]; ++j){
 	cout << j << " " << ((size_t *)Data)[j] << endl;
       }
     }
+     }
 #endif
     
     H5Pclose(dxpl_id);
@@ -2142,6 +2151,8 @@ void GenericIO::readData(int EffRank, size_t RowOffset, int Rank,
       size_t VNameNull = VName.find('\0');
       if (VNameNull < NameSize)
         VName.resize(VNameNull);
+
+      cout << Rank << "  " << RH->NElems << endl;
 
       uint64_t ReadSize = RH->NElems*VH->Size + CRCSize;
       if (VName != Vars[i].Name) {
