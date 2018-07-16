@@ -218,8 +218,8 @@ size_t GenericFileIO_HDF::get_NumElem() {
   /* Transactions  */
   int commRank;
 
-  //  MPI_Comm_rank(Comm, &commRank);
-  MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
+  MPI_Comm_rank(Comm, &commRank);
+  //MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
   FileName = FN;
 
 //   filetype = H5Tcopy (H5T_C_S1);
@@ -227,7 +227,7 @@ size_t GenericFileIO_HDF::get_NumElem() {
 
   // setup file access template with parallel IO access.
   fapl_id = H5Pcreate (H5P_FILE_ACCESS);
-  ret = H5Pset_fapl_mpio(fapl_id, MPI_COMM_WORLD, MPI_INFO_NULL);
+  ret = H5Pset_fapl_mpio(fapl_id, Comm, MPI_INFO_NULL);
   H5Pset_libver_bounds(fapl_id, H5F_LIBVER_LATEST, H5F_LIBVER_LATEST);
   H5Pset_fclose_degree(fapl_id,H5F_CLOSE_WEAK);
   H5Pset_coll_metadata_write(fapl_id, 1);
