@@ -404,12 +404,35 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
   mem_dataspace = H5Screate_simple (1, hypercount, NULL);
 
   hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
-  H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
-
+//  H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+#if 1 
   // write data
+  double t1, timer;
+  t1 = MPI_Wtime(); 
   ret = H5Dwrite(dataset, dtype, mem_dataspace, file_dataspace,
   		 plist_id, (void *)buf);
-   
+  timer = MPI_Wtime()-t1;
+#if 0
+  double *rtimers=NULL;
+  if(commRank == 0)  {
+    H5D_mpio_actual_io_mode_t actual_io_mode;
+    H5Pget_mpio_actual_io_mode( plist_id, &actual_io_mode);
+    cout << " collective mode " << actual_io_mode << endl; 
+    rtimers = (double *) malloc(commRanks*sizeof(double));
+  }
+
+  MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+  if(commRank == 0)  {
+    double mean=0;
+    for(int n = 0; n < commRanks; n++) {
+      mean += rtimers[n];
+    }
+    printf("H5DRead = %.2f \n", mean/commRanks);
+    free(rtimers);
+  }
+#endif
+#endif 
   // release dataspaceID
   H5Pclose (plist_id);
   H5Sclose (file_dataspace);
@@ -426,7 +449,7 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 			H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
 
   delete[] c_str3;
- 
+#if 1
   if( commRank == 0 ) {
     mem_dataspace = H5Screate(H5S_SCALAR);
     ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, file_dataspace,
@@ -436,9 +459,9 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
     ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, mem_dataspace,
 		   H5P_DEFAULT, NULL);
   }
-  
-  H5Sclose (file_dataspace);
   H5Sclose (mem_dataspace);
+#endif 
+  H5Sclose (file_dataspace);
   H5Dclose (dataset);
 
 }
@@ -723,6 +746,7 @@ void GenericIO::write() {
 #ifdef __bgq__
   MPI_Barrier(Comm);
 #endif
+  Partition=0;
   MPI_Comm_split(Comm, Partition, Rank, &SplitComm);
 
   int SplitNRanks, SplitRank;
@@ -1984,7 +2008,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
      if (!Data) cout << "NULLISH" << endl;
 
      dxpl_id = H5Pcreate (H5P_DATASET_XFER);
-     H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
+//     H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
 
      //H5Pset_dxpl_checksum_ptr(dxpl_id, &read1_cs);
 
