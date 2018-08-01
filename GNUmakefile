@@ -48,7 +48,9 @@
 MPI_DIR = $(HOME)/packages/mpich$(TYPE)
 #HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
 #HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build.edison/hdf5
-HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build/hdf5
+#HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build/hdf5
+HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build_1.8.12/hdf5
+#HDF_DIR =/global/homes/b/brtnfld/packages/hdf5/build_1.8/hdf5
 #ZLIB_DIR = $(HOME)/packages/zlib-1.2.8/zlib$(TYPE)/lib
 
 CC  = cc

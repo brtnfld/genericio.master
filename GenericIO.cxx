@@ -196,6 +196,7 @@ size_t GenericFileIO_HDF::get_NumElem() {
   void GenericFileIO_HDF::open(const std::string &FN, bool ForReading) {
   hid_t fid, space, dset, attr, atype, gid, aid;	  // HDF5 file IDs
   hid_t fapl_id;  // File access templates
+  hid_t fcpl_id;
   herr_t ret;     // Generic return value
   hsize_t     dims[1], adim[1];
   hsize_t     domainsize[1];
@@ -225,14 +226,33 @@ size_t GenericFileIO_HDF::get_NumElem() {
 //   filetype = H5Tcopy (H5T_C_S1);
 //   ret = H5Tset_size (filetype, H5T_VARIABLE);
 
+  MPI_Info info;
+  MPI_Info_create(&info);
+  MPI_Info_set(info, "cb_nodes","4");
+
   // setup file access template with parallel IO access.
   fapl_id = H5Pcreate (H5P_FILE_ACCESS);
-  ret = H5Pset_fapl_mpio(fapl_id, Comm, MPI_INFO_NULL);
+  ret = H5Pset_fapl_mpiposix(fapl_id, Comm, 0); 
+  //ret = H5Pset_fapl_mpio(fapl_id, Comm, info);
   H5Pset_libver_bounds(fapl_id, H5F_LIBVER_LATEST, H5F_LIBVER_LATEST);
   H5Pset_fclose_degree(fapl_id,H5F_CLOSE_WEAK);
+  fcpl_id = H5Pcreate(H5P_FILE_CREATE);  
+//  H5Pset_file_space_strategy(fcpl_id,H5F_FSPACE_STRATEGY_PAGE,0,(hsize_t)1);
+//  H5Pset_file_space_page_size(fcpl_id, (hsize_t)(2*1048576));
+#if 0 
+  H5AC_cache_config_t config;
+  H5Pget_mdc_config(fapl_id, &config); 
+  config.set_initial_size = 1;
+  config.initial_size = 8388608;
+  config.max_size = 12582912;
+  config.min_size = 6291456;
+  config.dirty_bytes_threshold = 12582912; 
+  H5Pset_mdc_config(fapl_id, &config);
+#endif   
+#if 0
   H5Pset_coll_metadata_write(fapl_id, 1);
   H5Pset_all_coll_metadata_ops(fapl_id, 1 );
-
+#endif
   FileName = FN;
 
   //  cout << "in open" << endl;
@@ -241,16 +261,17 @@ size_t GenericFileIO_HDF::get_NumElem() {
     if( (fid = H5Fopen(const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,fapl_id)) < 0)
       throw runtime_error( ("Unable to open the file: ") + FileName);
   } else {
-    if( (fid = H5Fcreate(const_cast<char *>(FileName.c_str()),H5F_ACC_TRUNC,H5P_DEFAULT,fapl_id)) < 0)
+    if( (fid = H5Fcreate(const_cast<char *>(FileName.c_str()),H5F_ACC_TRUNC,fcpl_id,fapl_id)) < 0)
       throw runtime_error( ("Unable to create the file: ") + FileName);
   }
   /* Get read context */
-  
+  MPI_Info_free(&info);  
   FH=fid;
 
   //  if( (fid = H5Fopen(const_cast<char *>(FileName.c_str()),H5F_ACC_RDWR,fapl_id)) < 0 ) {    
   // Release file-access template
   ret = H5Pclose(fapl_id);
+  ret = H5Pclose(fcpl_id);
 
   if ( ForReading ) {
     // get size
