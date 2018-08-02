@@ -37,27 +37,30 @@
 # 
 # *****************************************************************************
 
-#CC = gcc
-#CXX = g++
+CC = mpicc
+CXX = mpicxx
+MPICC = mpicc
+MPICXX = mpicxx
+HDF_DIR = $(HOME)/packages/hdf5/build/hdf5
 
-#MPICC = mpicc
-#MPICXX = mpicxx
-
-#TYPE=".intel"
-
-MPI_DIR = $(HOME)/packages/mpich$(TYPE)
 #HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
 #HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build.edison/hdf5
 #HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build/hdf5
-HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build_1.8.12/hdf5
+#HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build_1.8.12/hdf5
 #HDF_DIR =/global/homes/b/brtnfld/packages/hdf5/build_1.8/hdf5
 #ZLIB_DIR = $(HOME)/packages/zlib-1.2.8/zlib$(TYPE)/lib
 
-CC  = cc
-CXX = CC
+#TYPE=".intel"
 
-MPICC = cc
-MPICXX = CC
+HOST=$(uname -n | sed 's/[0-9]*//g')
+ifneq (cori,$(HOST))
+   FE_CFLAGS = -fPIC
+   CC  = cc
+   CXX = CC
+   MPICC = cc
+   MPICXX = CC
+endif
+
 DEF = -DGENERICIO_HAVE_HDF
 
 ifeq ($(DEF),-DGENERICIO_HAVE_HDF)
@@ -69,7 +72,7 @@ LIB = $(HDF_LIB) -lirc
 INC = $(HDF_INC)
 
 
-all: fe-progs mpi-progs
+all: fe-progs mpi-progs 
 sql: fe-sqlite
 
 BLOSC_CPPFLAGS := \
@@ -93,7 +96,7 @@ ifeq ($(UNAME_S),Linux)
 endif
 
 FEDIR = frontend
-FE_CFLAGS := -g -fPIC -O3 $(OPENMPFLAG)
+FE_CFLAGS := $(FE_CFLAGS) -g -O3 $(OPENMPFLAG)
 FE_CPPFLAGS := $(BASE_CPPFLAGS) -Ithirdparty/sqlite $(INC) -DGENERICIO_NO_MPI $(DEF)
 
 MPIDIR = mpi

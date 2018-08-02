@@ -232,8 +232,8 @@ size_t GenericFileIO_HDF::get_NumElem() {
 
   // setup file access template with parallel IO access.
   fapl_id = H5Pcreate (H5P_FILE_ACCESS);
-  ret = H5Pset_fapl_mpiposix(fapl_id, Comm, 0); 
-  //ret = H5Pset_fapl_mpio(fapl_id, Comm, info);
+  //ret = H5Pset_fapl_mpiposix(fapl_id, Comm, 0); 
+  ret = H5Pset_fapl_mpio(fapl_id, Comm, info);
   H5Pset_libver_bounds(fapl_id, H5F_LIBVER_LATEST, H5F_LIBVER_LATEST);
   H5Pset_fclose_degree(fapl_id,H5F_CLOSE_WEAK);
   fcpl_id = H5Pcreate(H5P_FILE_CREATE);  
