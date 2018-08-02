@@ -68,7 +68,7 @@ ifeq ($(DEF),-DGENERICIO_HAVE_HDF)
 HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -ldl
 HDF_INC = -I$(HDF_DIR)/include
 endif
-LIB = $(HDF_LIB) -lirc
+LIB = $(HDF_LIB) #-lirc
 INC = $(HDF_INC)
 
 
