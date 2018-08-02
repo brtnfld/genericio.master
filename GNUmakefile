@@ -52,8 +52,8 @@ HDF_DIR = $(HOME)/packages/hdf5/build/hdf5
 
 #TYPE=".intel"
 
-HOST=$(uname -n | sed 's/[0-9]*//g')
-ifneq (cori,$(HOST))
+HOST=$(shell uname -n | sed 's/[0-9]*//g')
+ifeq ($(HOST), cori)
    FE_CFLAGS = -fPIC
    CC  = cc
    CXX = CC
