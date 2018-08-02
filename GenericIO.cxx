@@ -1896,6 +1896,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
   MPI_Comm_size(Comm, &commRanks);
 #else
   Rank = 0;
+  commRanks = 1;
 #endif
 
   hid_t dset, attr_id, space, aspace;
