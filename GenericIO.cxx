@@ -117,6 +117,8 @@ void GenericFileIO_MPI::read(void *buf, size_t count, off_t offset,
 
 void GenericFileIO_MPI::write(const void *buf, size_t count, off_t offset,
                               const std::string &D) {
+
+cout <<"coming to GenericFileIO write "<<endl;
   while (count > 0) {
     MPI_Status status;
     if (MPI_File_write_at(FH, offset, (void *) buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
@@ -363,6 +365,7 @@ void GenericFileIO_HDF::read_hdf(void *buf, size_t count, off_t offset,
 
 void GenericFileIO_HDF::write(const void *buf, size_t count, off_t offset,
 				   const std::string &D) {
+//cout <<"Coming to no-op HDF5 write "<<endl;
 }
 
 void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset,
@@ -429,10 +432,10 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 #if 1 
   // write data
   double t1, timer;
-  t1 = MPI_Wtime(); 
+  //t1 = MPI_Wtime(); 
   ret = H5Dwrite(dataset, dtype, mem_dataspace, file_dataspace,
   		 plist_id, (void *)buf);
-  timer = MPI_Wtime()-t1;
+  //timer = MPI_Wtime()-t1;
 #if 0
   double *rtimers=NULL;
   if(commRank == 0)  {
@@ -464,13 +467,15 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
   // Create the CRC dataset
   //
   ret=H5Dclose(dataset);
-
+#if 0
+  std::strcpy(c_str3, D.c_str());
+  strcat(c_str3, "_CRC");
   file_dataspace = H5Screate(H5S_SCALAR);
   dataset = H5Dcreate2(gid, c_str3, H5T_NATIVE_ULONG, file_dataspace,
 			H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
 
   delete[] c_str3;
-#if 1
+//#if 1
   if( commRank == 0 ) {
     mem_dataspace = H5Screate(H5S_SCALAR);
     ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, file_dataspace,
@@ -481,9 +486,10 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 		   H5P_DEFAULT, NULL);
   }
   H5Sclose (mem_dataspace);
-#endif 
+//#endif 
   H5Sclose (file_dataspace);
   H5Dclose (dataset);
+#endif
 
 }
 
@@ -825,6 +831,7 @@ void GenericIO::write() {
     ss << FileName << "#" << Partition;
     LocalFileName = ss.str();
   } else {
+//cout <<"Split rank is Nranks" <<endl;
     LocalFileName = FileName;
   }
 
@@ -917,6 +924,8 @@ void GenericIO::write() {
       } else {
 nocomp:
         LocalBlockHeaders[i].Size = NElems*Vars[i].Size;
+cerr<<"NElems is "<<NElems <<endl;
+cerr<<" NElems*Vars[i].Size is "<< NElems*Vars[i].Size <<endl;
         LocalData[i] = Vars[i].Data;
         LocalHasExtraSpace[i] = Vars[i].HasExtraSpace;
       }
@@ -924,6 +933,10 @@ nocomp:
   }
 
 
+// START TIMING
+//Add MPI_Barrier before checking the time, may not affect the time,but it is the right way.
+//Don't add it now and see if we can see the performance improvement.
+  //MPI_Barrier(Comm);
   double StartTime = MPI_Wtime();
 
   if (SplitRank == 0) {
@@ -1085,9 +1098,11 @@ nocomp:
   if (FileIOType == FileIOHDF) {
     gfio_hdf = dynamic_cast<GenericFileIO_HDF *> (FH.get());
     fid = gfio_hdf->get_fileid();
-
-    filetype = H5Tcopy (H5T_C_S1);
-    ret = H5Tset_size (filetype, H5T_VARIABLE);
+    // Don't run all the attributes, group routines
+#if 0
+    // Not use the filetype, commenting out
+    //filetype = H5Tcopy (H5T_C_S1);
+    //ret = H5Tset_size (filetype, H5T_VARIABLE);
 
     // Create a header dataset containing file's metadata information
 
@@ -1123,10 +1138,11 @@ nocomp:
     ret  = H5Awrite (attr, atype, notes);
     ret  = H5Aclose (attr);
     ret = H5Sclose (aid);
-    ret = H5Tclose (filetype);
+    //ret = H5Tclose (filetype);
     ret = H5Gclose (gid);
     
     gid = H5Gopen2(fid, "Variables", H5P_DEFAULT);
+#endif
   }
 #endif
   for (size_t i = 0; i < Vars.size(); ++i) {
@@ -1191,7 +1207,7 @@ nocomp:
 	  }
 	  delete rbufv;
 	  CRC = CRC_sum;
-	  cout << "CRC_sum" << CRC << endl;
+	  //cout << "CRC_sum" << CRC << endl;
 	} else
 	  CRC = 0;
 
@@ -1207,12 +1223,15 @@ nocomp:
 	}else {
 	  dtype = H5T_NATIVE_FLOAT;
 	}
-	gfio_hdf->write_hdf(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem);
+	gfio_hdf->write_hdf(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, fid, TotElem);
+	//gfio_hdf->write_hdf(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem);
       } else 
 #endif
 	crc64_invert(CRC, CRCLoc);
+//cout<<"one MPI write "<<endl;
 	FH.get()->write(Data, WriteSize + CRCSize, Offset, Vars[i].Name + " with CRC");
     } else {
+//cout <<"two MPI writes "<<endl;
       crc64_invert(CRC, CRCLoc);
       FH.get()->write(Data, WriteSize, Offset, Vars[i].Name);
       FH.get()->write(CRCLoc, CRCSize, Offset + WriteSize, Vars[i].Name + " CRC");
@@ -1226,11 +1245,11 @@ nocomp:
   //  printf("finished loop %d\n", Rank);
 #ifdef GENERICIO_HAVE_HDF
   if (FileIOType == FileIOHDF)
-    ret = H5Gclose(gid);
+    //ret = H5Gclose(gid);
 #endif
   close();
   MPI_Barrier(Comm);
-
+//STOP TIMING
   double EndTime = MPI_Wtime();
   double TotalTime = EndTime - StartTime;
   double MaxTotalTime;
