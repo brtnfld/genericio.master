@@ -60,6 +60,13 @@ ifeq ($(HOST), cori)
    MPICC = cc
    MPICXX = CC
 endif
+ifeq ($(HOST), edison)
+   FE_CFLAGS = -fPIC
+   CC  = cc
+   CXX = CC
+   MPICC = cc
+   MPICXX = CC
+endif
 ifeq ($(HOST), jelly)
    FE_CFLAGS = -fPIC
 endif
