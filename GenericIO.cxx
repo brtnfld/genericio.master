@@ -79,6 +79,7 @@ H5D_rw_multi_t multi_info[9];
 #endif
 
 
+
 using namespace std;
 
 namespace gio {
@@ -1172,6 +1173,8 @@ nocomp:
     gid = H5Gopen2(fid, "Variables", H5P_DEFAULT);
   }
 #endif
+
+  double t1, timer=0.;
   for (size_t i = 0; i < Vars.size(); ++i) {
     uint64_t WriteSize = NeedsBlockHeaders ?
                          LocalBlockHeaders[i].Size : NElems*Vars[i].Size;
@@ -1254,10 +1257,14 @@ nocomp:
       } else 
 #endif
 	crc64_invert(CRC, CRCLoc);
+        t1 = MPI_Wtime();
 	FH.get()->write(Data, WriteSize + CRCSize, Offset, Vars[i].Name + " with CRC");
+        timer += MPI_Wtime()-t1;
     } else {
       crc64_invert(CRC, CRCLoc);
+      t1 = MPI_Wtime();
       FH.get()->write(Data, WriteSize, Offset, Vars[i].Name);
+      timer += MPI_Wtime()-t1;
       FH.get()->write(CRCLoc, CRCSize, Offset + WriteSize, Vars[i].Name + " CRC");
     }
 
@@ -1266,30 +1273,19 @@ nocomp:
 
     Offset += WriteSize + CRCSize;
   }
-
+#ifdef GENERICIO_HAVE_HDF
 #ifdef HDF5_HAVE_MULTI_DATASETS
+  if (FileIOType == FileIOHDF) {
     hid_t plist_id;
     plist_id = H5Pcreate(H5P_DATASET_XFER);
     //H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
-    double t1, timer;
     t1 = MPI_Wtime();
     H5Dwrite_multi(plist_id, Vars.size(), multi_info);
     timer = MPI_Wtime()-t1;
-    double *rtimers=NULL;
     if(Rank == 0)  {
       H5D_mpio_actual_io_mode_t actual_io_mode;
       H5Pget_mpio_actual_io_mode( plist_id, &actual_io_mode);
       cout << " collective mode " << actual_io_mode << endl; 
-      rtimers = (double *) malloc(NRanks*sizeof(double));
-    }
-    MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    if(Rank == 0)  {
-      double mean=0;
-      for(int n = 0; n < NRanks; n++) {
-	mean += rtimers[n];
-    }
-      printf("H5Dwrite_multi = %.2f s,  %.2f MB/s \n", mean/NRanks,( (double) FileSize) / (mean/NRanks) / (1024.*1024.));
-      free(rtimers);
     }
 
     H5Pclose(plist_id);
@@ -1302,8 +1298,23 @@ nocomp:
       //   cout << multi_info[i].dset_space_id << endl;
       H5Sclose( multi_info[i].dset_space_id);
     }
-
+  }
 #endif
+#endif
+
+  double *rtimers=NULL;
+  if(Rank == 0)  {
+    rtimers = (double *) malloc(NRanks*sizeof(double));
+  }
+  MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  if(Rank == 0)  {
+    double mean=0;
+    for(int n = 0; n < NRanks; n++) {
+      mean += rtimers[n];
+    }
+    printf("write Data = %.4f s,  %.4f MB/s \n", mean/NRanks,( (double) FileSize) / (mean/NRanks) / (1024.*1024.));
+    free(rtimers);
+  }
 
   //  printf("finished loop %d\n", Rank);
 #ifdef GENERICIO_HAVE_HDF
