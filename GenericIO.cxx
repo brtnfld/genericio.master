@@ -73,6 +73,12 @@ extern "C" {
 #define MPI_UINT64_T (sizeof(long) == 8 ? MPI_LONG : MPI_LONG_LONG)
 #endif
 
+//#def HDF5_HAVE_MULTI_DATASETS
+#ifdef HDF5_HAVE_MULTI_DATASETS
+H5D_rw_multi_t multi_info[9];
+#endif
+
+
 using namespace std;
 
 namespace gio {
@@ -366,7 +372,7 @@ void GenericFileIO_HDF::write(const void *buf, size_t count, off_t offset,
 }
 
 void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset,
-				  const std::string &D, hid_t dtype, hsize_t numel, const void *CRC, hid_t gid, uint64_t Totnumel) {
+				  const std::string &D, hid_t dtype, hsize_t numel, const void *CRC, hid_t gid, uint64_t Totnumel, size_t i) {
 
   hid_t sid, dataset,file_dataspace, aid, mem_dataspace, attr, fid, aspace;
   
@@ -398,6 +404,9 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 
   if( (sid = H5Screate_simple (1, dims, NULL)) < 0)
       throw runtime_error( "Unable to create HDF5 space: " );
+
+#ifndef HDF5_HAVE_MULTI_DATASETS
+
   if( (dataset = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT)) < 0)
     throw runtime_error( "Unable to create HDF5 dataset " );
 
@@ -429,9 +438,46 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 #if 1 
   // write data
   double t1, timer;
-  t1 = MPI_Wtime(); 
+  t1 = MPI_Wtime();
+
   ret = H5Dwrite(dataset, dtype, mem_dataspace, file_dataspace,
   		 plist_id, (void *)buf);
+  
+#else  
+  if( (multi_info[i].dset_id = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT)) < 0)
+    throw runtime_error( "Unable to create HDF5 dataset " );
+
+  delete[] c_str;
+
+  std::strcpy(c_str3, D.c_str());
+  strcat(c_str3, "_CRC");
+ 
+  /* set up dimensions of the slab this process accesses */
+
+  start[0] = offset; // commRank*Totnumel/commRanks;
+
+  hypercount[0] = numel;
+
+  // cout << commRank << " " << start[0] << endl;
+  //cout << commRank << "count " << hypercount[0] << endl;
+
+  stride[0] = 1;
+
+  multi_info[i].dset_space_id = H5Dget_space (multi_info[i].dset_id);
+   
+  ret=H5Sselect_hyperslab( multi_info[i].dset_space_id, H5S_SELECT_SET, start, stride,
+			  hypercount, NULL);
+
+  multi_info[i].mem_space_id = H5Screate_simple (1, hypercount, NULL);
+
+
+  multi_info[i].dset_id = dataset;
+  multi_info[i].mem_type_id = dtype;
+  multi_info[i].mem_space_id = mem_dataspace;
+  multi_info[i].dset_space_id = file_dataspace;
+  multi_info[i].u.wbuf = buf;
+#endif
+
   timer = MPI_Wtime()-t1;
 #if 0
   double *rtimers=NULL;
@@ -455,15 +501,17 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 #endif
 #endif 
   // release dataspaceID
+#ifndef HDF5_HAVE_MULTI_DATASETS
   H5Pclose (plist_id);
   H5Sclose (file_dataspace);
   H5Sclose (mem_dataspace);
+  ret=H5Dclose(dataset);
+#endif
   H5Sclose (sid);
 
   //
   // Create the CRC dataset
   //
-  ret=H5Dclose(dataset);
 
   file_dataspace = H5Screate(H5S_SCALAR);
   dataset = H5Dcreate2(gid, c_str3, H5T_NATIVE_ULONG, file_dataspace,
@@ -1207,7 +1255,7 @@ nocomp:
 	}else {
 	  dtype = H5T_NATIVE_FLOAT;
 	}
-	gfio_hdf->write_hdf(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem);
+	gfio_hdf->write_hdf(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem, i);
       } else 
 #endif
 	crc64_invert(CRC, CRCLoc);
@@ -1223,6 +1271,22 @@ nocomp:
 
     Offset += WriteSize + CRCSize;
   }
+
+#ifdef HDF5_HAVE_MULTI_DATASETS
+    hid_t plist_id;
+    plist_id = H5Pcreate(H5P_DATASET_XFER);
+    //H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+    H5Dwrite_multi(plist_id, Vars.size(), multi_info);
+    H5Pclose(plist_id);
+
+    for (size_t i = 0; i < Vars.size(); ++i) {
+      H5Dclose(multi_info[i].dset_id);
+      H5Sclose(multi_info[i].mem_space_id);
+      H5Sclose( multi_info[i].dset_space_id);
+    }
+
+#endif
+
   //  printf("finished loop %d\n", Rank);
 #ifdef GENERICIO_HAVE_HDF
   if (FileIOType == FileIOHDF)
