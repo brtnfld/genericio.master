@@ -73,7 +73,7 @@ extern "C" {
 #define MPI_UINT64_T (sizeof(long) == 8 ? MPI_LONG : MPI_LONG_LONG)
 #endif
 
-//#def HDF5_HAVE_MULTI_DATASETS
+#define HDF5_HAVE_MULTI_DATASETS
 #ifdef HDF5_HAVE_MULTI_DATASETS
 H5D_rw_multi_t multi_info[9];
 #endif
@@ -385,12 +385,13 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
   hsize_t hypercount[1], stride[1];	/* for hyperslab setting */
   hsize_t sizedims[1], adims[1];
   int commRank, commRanks;
+  double t1, timer;
   MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
   MPI_Comm_size(MPI_COMM_WORLD, &commRanks); 
 
   adims[0] = (hsize_t)commRanks;
   dims[0] = (hsize_t)Totnumel;
-
+ 
 
   // cout << "inside hdf_write" << endl;
 
@@ -402,8 +403,10 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 
   std::strcpy(c_str, D.c_str());
 
+
   if( (sid = H5Screate_simple (1, dims, NULL)) < 0)
       throw runtime_error( "Unable to create HDF5 space: " );
+
 
 #ifndef HDF5_HAVE_MULTI_DATASETS
 
@@ -435,16 +438,15 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 
   hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
 //  H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
-#if 1 
   // write data
-  double t1, timer;
   t1 = MPI_Wtime();
 
   ret = H5Dwrite(dataset, dtype, mem_dataspace, file_dataspace,
   		 plist_id, (void *)buf);
   
-#else  
-  if( (multi_info[i].dset_id = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT)) < 0)
+#else
+  multi_info[i].mem_type_id = dtype;
+  if( (multi_info[i].dset_id = H5Dcreate2(gid, c_str,  multi_info[i].mem_type_id, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT)) < 0)
     throw runtime_error( "Unable to create HDF5 dataset " );
 
   delete[] c_str;
@@ -470,11 +472,6 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 
   multi_info[i].mem_space_id = H5Screate_simple (1, hypercount, NULL);
 
-
-  multi_info[i].dset_id = dataset;
-  multi_info[i].mem_type_id = dtype;
-  multi_info[i].mem_space_id = mem_dataspace;
-  multi_info[i].dset_space_id = file_dataspace;
   multi_info[i].u.wbuf = buf;
 #endif
 
@@ -499,7 +496,6 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
     free(rtimers);
   }
 #endif
-#endif 
   // release dataspaceID
 #ifndef HDF5_HAVE_MULTI_DATASETS
   H5Pclose (plist_id);
@@ -513,12 +509,12 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
   // Create the CRC dataset
   //
 
+#if 1
   file_dataspace = H5Screate(H5S_SCALAR);
   dataset = H5Dcreate2(gid, c_str3, H5T_NATIVE_ULONG, file_dataspace,
 			H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
 
   delete[] c_str3;
-#if 1
   if( commRank == 0 ) {
     mem_dataspace = H5Screate(H5S_SCALAR);
     ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, file_dataspace,
@@ -529,10 +525,9 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 		   H5P_DEFAULT, NULL);
   }
   H5Sclose (mem_dataspace);
-#endif 
   H5Sclose (file_dataspace);
   H5Dclose (dataset);
-
+#endif 
 }
 
 void GenericFileIO_HDFCollective::read(void *buf, size_t count, off_t offset,
@@ -1239,7 +1234,7 @@ nocomp:
 	  }
 	  delete rbufv;
 	  CRC = CRC_sum;
-	  cout << "CRC_sum" << CRC << endl;
+	  //  cout << "CRC_sum" << CRC << endl;
 	} else
 	  CRC = 0;
 
@@ -1276,12 +1271,35 @@ nocomp:
     hid_t plist_id;
     plist_id = H5Pcreate(H5P_DATASET_XFER);
     //H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+    double t1, timer;
+    t1 = MPI_Wtime();
     H5Dwrite_multi(plist_id, Vars.size(), multi_info);
+    timer = MPI_Wtime()-t1;
+    double *rtimers=NULL;
+    if(Rank == 0)  {
+      H5D_mpio_actual_io_mode_t actual_io_mode;
+      H5Pget_mpio_actual_io_mode( plist_id, &actual_io_mode);
+      cout << " collective mode " << actual_io_mode << endl; 
+      rtimers = (double *) malloc(NRanks*sizeof(double));
+    }
+    MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    if(Rank == 0)  {
+      double mean=0;
+      for(int n = 0; n < NRanks; n++) {
+	mean += rtimers[n];
+    }
+      printf("H5Dwrite_multi = %.2f s,  %.2f MB/s \n", mean/NRanks,( (double) FileSize) / (mean/NRanks) / (1024.*1024.));
+      free(rtimers);
+    }
+
     H5Pclose(plist_id);
 
     for (size_t i = 0; i < Vars.size(); ++i) {
+      //  cout << multi_info[i].dset_id << endl;
       H5Dclose(multi_info[i].dset_id);
+      //  cout << multi_info[i].mem_space_id << endl;
       H5Sclose(multi_info[i].mem_space_id);
+      //   cout << multi_info[i].dset_space_id << endl;
       H5Sclose( multi_info[i].dset_space_id);
     }
 

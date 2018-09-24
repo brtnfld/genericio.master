@@ -41,7 +41,7 @@ CC = mpicc
 CXX = mpicxx
 MPICC = mpicc
 MPICXX = mpicxx
-HDF_DIR = $(HOME)/packages/hdf5/build/hdf5
+HDF_DIR = $(HOME)/packages/hdf5_multi/build/hdf5
 
 #HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
 #HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build.edison/hdf5
@@ -59,6 +59,9 @@ ifeq ($(HOST), cori)
    CXX = CC
    MPICC = cc
    MPICXX = CC
+endif
+ifeq ($(HOST), jelly)
+   FE_CFLAGS = -fPIC
 endif
 
 DEF = -DGENERICIO_HAVE_HDF
