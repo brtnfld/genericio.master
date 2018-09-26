@@ -1411,11 +1411,8 @@ nocomp:
     H5Pclose(plist_id);
 
     for (size_t i = 0; i < Vars.size(); ++i) {
-      //  cout << multi_info[i].dset_id << endl;
       H5Dclose(multi_info[i].dset_id);
-      //  cout << multi_info[i].mem_space_id << endl;
       H5Sclose(multi_info[i].mem_space_id);
-      //   cout << multi_info[i].dset_space_id << endl;
       H5Sclose( multi_info[i].dset_space_id);
     }
   }
@@ -1435,7 +1432,6 @@ nocomp:
     free(rtimers);
   }
 
-  //  printf("finished loop %d\n", Rank);
 #ifdef GENERICIO_HAVE_HDF
   if (FileIOType == FileIOHDF)
     ret = H5Gclose(gid);
@@ -1454,9 +1450,7 @@ nocomp:
   }
 
   if (Rank == 0) {
-    if (FileIOType == FileIOHDF) {
-      printf("write compound Data = %.4f s,  %.4f MB/s \n", mean/NRanks,( (double) FileSize) / (mean/NRanks) / (1024.*1024.));
-    }
+    printf("WRITE DATA = %.4f s,  %.4f MB/s \n", mean/NRanks,( (double) FileSize) / (mean/NRanks) / (1024.*1024.));
     double Rate = ((double) FileSize) / MaxTotalTime / (1024.*1024.);
     cout << NRanks << " Procs Wrote " << Vars.size() << " variables to " << FileName <<
             " (" << FileSize << " bytes) in " << MaxTotalTime << "s: " <<
