@@ -73,12 +73,29 @@ extern "C" {
 #define MPI_UINT64_T (sizeof(long) == 8 ? MPI_LONG : MPI_LONG_LONG)
 #endif
 
-#define HDF5_HAVE_MULTI_DATASETS
+//#define HDF5_HAVE_MULTI_DATASETS
 #ifdef HDF5_HAVE_MULTI_DATASETS
 H5D_rw_multi_t multi_info[9];
 #endif
 
-
+// COMPOUND TYPE METHOD
+#define HDF5_DERV
+#ifdef HDF5_DERV
+typedef struct {
+  int64_t id;
+  uint16_t mask;
+  float   x;
+  float   y;
+  float   z;
+  float   vx;
+  float   vy;
+  float   vz;;
+  float   phi;
+} hacc_t;
+hacc_t *Hdata;
+hid_t Hmemtype;
+hid_t Hfiletype;
+#endif
 
 using namespace std;
 
@@ -230,9 +247,6 @@ size_t GenericFileIO_HDF::get_NumElem() {
   //MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
   FileName = FN;
 
-//   filetype = H5Tcopy (H5T_C_S1);
-//   ret = H5Tset_size (filetype, H5T_VARIABLE);
-
   MPI_Info info;
   MPI_Info_create(&info);
   MPI_Info_set(info, "cb_nodes","4");
@@ -299,7 +313,6 @@ size_t GenericFileIO_HDF::get_NumElem() {
     if(Rank+1 <= dims[0]%commRanks)
       NumElem +=1;
 
-    //   printf("%d\n",NumElem);
   }
 
   //  cout << "done open" << endl;
@@ -1174,6 +1187,33 @@ nocomp:
   }
 #endif
 
+#ifdef HDF5_DERV
+  Hdata = (hacc_t *) malloc (NElems * sizeof (hacc_t));
+
+  Hmemtype = H5Tcreate (H5T_COMPOUND, sizeof (hacc_t));
+  H5Tinsert (Hmemtype, "id",
+		      HOFFSET (hacc_t, id), H5T_NATIVE_LONG);
+  H5Tinsert (Hmemtype, "mask", 
+		      HOFFSET (hacc_t, mask), H5T_NATIVE_B16);
+  H5Tinsert (Hmemtype, "x",
+		      HOFFSET (hacc_t, x), H5T_NATIVE_FLOAT);
+  H5Tinsert (Hmemtype, "y",
+		      HOFFSET (hacc_t, y), H5T_NATIVE_FLOAT);
+  H5Tinsert (Hmemtype, "z",
+		      HOFFSET (hacc_t, z), H5T_NATIVE_FLOAT);
+  H5Tinsert (Hmemtype, "vx",
+		      HOFFSET (hacc_t, vx), H5T_NATIVE_FLOAT);
+  H5Tinsert (Hmemtype, "vy",
+		      HOFFSET (hacc_t, vy), H5T_NATIVE_FLOAT);
+  H5Tinsert (Hmemtype, "vz",
+		      HOFFSET (hacc_t, vz), H5T_NATIVE_FLOAT);
+  H5Tinsert (Hmemtype, "phi",
+		      HOFFSET (hacc_t, phi), H5T_NATIVE_FLOAT);
+
+#endif
+
+  uint64_t Offsets_glb;
+	
   double t1, timer=0.;
   for (size_t i = 0; i < Vars.size(); ++i) {
     uint64_t WriteSize = NeedsBlockHeaders ?
@@ -1246,6 +1286,39 @@ nocomp:
 	delete sbufv;
 	MPI_Type_free(&mpi_crc_type);
 
+#ifdef HDF5_DERV
+	hsize_t ii;
+	if( Vars[i].Name.compare("id") == 0) {
+	  for (ii=0; ii < NElems; ii++)
+	    Hdata[ii].id = *((int64_t *)Data + ii);
+	} else if( Vars[i].Name.compare("mask") == 0) {
+	  for (ii=0; ii < NElems; ii++)
+	    Hdata[ii].mask = *((uint16_t *)Data + ii);
+	} else if( Vars[i].Name.compare("x") == 0) {
+	  for (ii=0; ii < NElems; ii++)
+	    Hdata[ii].x = *((float *)Data + ii);
+	} else if( Vars[i].Name.compare("y") == 0) {
+	  for (ii=0; ii < NElems; ii++)
+	    Hdata[ii].y = *((float *)Data + ii);
+	} else if( Vars[i].Name.compare("z") == 0) {
+	  for (ii=0; ii < NElems; ii++)
+	    Hdata[ii].z = *((float *)Data + ii);
+	} else if( Vars[i].Name.compare("vx") == 0) {
+	  for (ii=0; ii < NElems; ii++)
+	    Hdata[ii].vx = *((float *)Data + ii);
+	} else if( Vars[i].Name.compare("vy") == 0) {
+	  for (ii=0; ii < NElems; ii++)
+	    Hdata[ii].vy = *((float *)Data + ii);
+	} else if( Vars[i].Name.compare("vz") == 0) {
+	  for (ii=0; ii < NElems; ii++)
+	    Hdata[ii].vz = *((float *)Data + ii);
+	} else if( Vars[i].Name.compare("phi") == 0) {
+	  for (ii=0; ii < NElems; ii++) {
+	    Hdata[ii].phi = *((float *)Data + ii);
+	  }
+	}
+	Offsets_glb = Offsets;
+#else
 	if( Vars[i].Name.compare("id") == 0) {
 	  dtype = H5T_NATIVE_LONG;
 	} else if( Vars[i].Name.compare("mask") == 0) {
@@ -1253,7 +1326,9 @@ nocomp:
 	}else {
 	  dtype = H5T_NATIVE_FLOAT;
 	}
+	
 	gfio_hdf->write_hdf(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem, i);
+#endif
       } else 
 #endif
 	crc64_invert(CRC, CRCLoc);
@@ -1274,6 +1349,51 @@ nocomp:
     Offset += WriteSize + CRCSize;
   }
 #ifdef GENERICIO_HAVE_HDF
+
+#ifdef HDF5_DERV
+  if (FileIOType == FileIOHDF) {
+   /*
+     * Create dataspace.  Setting maximum size to NULL sets the maximum
+     * size to be the current size.
+     */
+    hid_t filespace, memspace, dset, plist_id;
+    hsize_t     dims[1];
+    dims[0] = (hsize_t)TotElem;
+    filespace = H5Screate_simple (1, dims, NULL);
+
+    /*
+     * Create the dataset and write the compound data to it.
+     */
+    dset = H5Dcreate (gid, "DATA", Hmemtype, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+    hsize_t	count[1];	          /* hyperslab selection parameters */
+    hsize_t	offset[1];
+    herr_t status;
+    count[0] = NElems;
+    memspace = H5Screate_simple(1, count, NULL);
+
+    offset[0] = Offsets_glb;
+
+    H5Sselect_hyperslab(filespace, H5S_SELECT_SET, offset, NULL, count, NULL);
+
+    plist_id = H5Pcreate(H5P_DATASET_XFER);
+    //    H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+
+    t1 = MPI_Wtime();
+    status = H5Dwrite (dset, Hmemtype, memspace, filespace, plist_id, Hdata);
+    timer = MPI_Wtime()-t1;
+
+    H5Pclose(plist_id);
+    status = H5Dclose (dset);
+    status = H5Sclose (filespace);
+    status = H5Sclose (memspace);
+    status = H5Tclose (Hmemtype);
+    free(Hdata);
+
+  }
+#endif
+
+
 #ifdef HDF5_HAVE_MULTI_DATASETS
   if (FileIOType == FileIOHDF) {
     hid_t plist_id;
@@ -1302,17 +1422,16 @@ nocomp:
 #endif
 #endif
 
+  double mean=0;
   double *rtimers=NULL;
   if(Rank == 0)  {
     rtimers = (double *) malloc(NRanks*sizeof(double));
   }
   MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   if(Rank == 0)  {
-    double mean=0;
     for(int n = 0; n < NRanks; n++) {
       mean += rtimers[n];
     }
-    printf("write Data = %.4f s,  %.4f MB/s \n", mean/NRanks,( (double) FileSize) / (mean/NRanks) / (1024.*1024.));
     free(rtimers);
   }
 
@@ -1335,6 +1454,9 @@ nocomp:
   }
 
   if (Rank == 0) {
+    if (FileIOType == FileIOHDF) {
+      printf("write compound Data = %.4f s,  %.4f MB/s \n", mean/NRanks,( (double) FileSize) / (mean/NRanks) / (1024.*1024.));
+    }
     double Rate = ((double) FileSize) / MaxTotalTime / (1024.*1024.);
     cout << NRanks << " Procs Wrote " << Vars.size() << " variables to " << FileName <<
             " (" << FileSize << " bytes) in " << MaxTotalTime << "s: " <<
