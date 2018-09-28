@@ -28,7 +28,7 @@
  * *****************************************************************************
  * 
  *                                  DISCLAIMER
- * THE SOFTWARE IS SUPPLIED “AS IS” WITHOUT WARRANTY OF ANY KIND.  NEITHER THE
+ * THE SOFTWARE IS SUPPLIED %G“%@AS IS-f� WITHOUT WARRANTY OF ANY KIND.  NEITHER THE-A
  * UNTED STATES GOVERNMENT, NOR THE UNITED STATES DEPARTMENT OF ENERGY, NOR
  * UCHICAGO ARGONNE, LLC, NOR ANY OF THEIR EMPLOYEES, MAKES ANY WARRANTY,
  * EXPRESS OR IMPLIED, OR ASSUMES ANY LEGAL LIABILITY OR RESPONSIBILITY FOR THE
@@ -95,6 +95,9 @@ typedef struct {
 hacc_t *Hdata;
 hid_t Hmemtype;
 hid_t Hfiletype;
+
+uint64_t CRC_values[9];
+
 #endif
 
 using namespace std;
@@ -296,7 +299,11 @@ size_t GenericFileIO_HDF::get_NumElem() {
 
   if ( ForReading ) {
     // get size
+#ifdef HDF5_DERV
+    dset  = H5Dopen (fid, "/Variables/DATA", H5P_DEFAULT);
+#else
     dset  = H5Dopen (fid, "/Variables/id", H5P_DEFAULT);
+#endif
     space = H5Dget_space (dset);
     ndims = H5Sget_simple_extent_dims (space, dims, NULL);
 
@@ -791,7 +798,7 @@ void GenericIO::write() {
 #ifdef GENERICIO_HAVE_HDF
   hid_t fid, space, dset, attr, filetype, atype, gid, aid, tid1, rid1, rid2, dxpl_id;
   hid_t fapl_id;  // File access templates
-  hid_t sid, *dataset, *dataset_CRC;
+  hid_t sid, dataset;
   hsize_t dims[1]; // dataspace dim sizes
   hsize_t adim[1];
   hsize_t start[1];
@@ -1194,7 +1201,7 @@ nocomp:
   H5Tinsert (Hmemtype, "id",
 		      HOFFSET (hacc_t, id), H5T_NATIVE_LONG);
   H5Tinsert (Hmemtype, "mask", 
-		      HOFFSET (hacc_t, mask), H5T_NATIVE_B16);
+		      HOFFSET (hacc_t, mask), H5T_NATIVE_UINT16);
   H5Tinsert (Hmemtype, "x",
 		      HOFFSET (hacc_t, x), H5T_NATIVE_FLOAT);
   H5Tinsert (Hmemtype, "y",
@@ -1291,38 +1298,48 @@ nocomp:
 	if( Vars[i].Name.compare("id") == 0) {
 	  for (ii=0; ii < NElems; ii++)
 	    Hdata[ii].id = *((int64_t *)Data + ii);
+	  CRC_values[0] = CRC;
 	} else if( Vars[i].Name.compare("mask") == 0) {
 	  for (ii=0; ii < NElems; ii++)
 	    Hdata[ii].mask = *((uint16_t *)Data + ii);
+	  CRC_values[1] = CRC;
 	} else if( Vars[i].Name.compare("x") == 0) {
 	  for (ii=0; ii < NElems; ii++)
 	    Hdata[ii].x = *((float *)Data + ii);
+	  CRC_values[2] = CRC;
 	} else if( Vars[i].Name.compare("y") == 0) {
 	  for (ii=0; ii < NElems; ii++)
 	    Hdata[ii].y = *((float *)Data + ii);
+	  CRC_values[3] = CRC;
 	} else if( Vars[i].Name.compare("z") == 0) {
 	  for (ii=0; ii < NElems; ii++)
 	    Hdata[ii].z = *((float *)Data + ii);
+	  CRC_values[4] = CRC;
 	} else if( Vars[i].Name.compare("vx") == 0) {
 	  for (ii=0; ii < NElems; ii++)
 	    Hdata[ii].vx = *((float *)Data + ii);
+	  CRC_values[5] = CRC;
 	} else if( Vars[i].Name.compare("vy") == 0) {
 	  for (ii=0; ii < NElems; ii++)
 	    Hdata[ii].vy = *((float *)Data + ii);
+	  CRC_values[6] = CRC;
 	} else if( Vars[i].Name.compare("vz") == 0) {
 	  for (ii=0; ii < NElems; ii++)
 	    Hdata[ii].vz = *((float *)Data + ii);
+	  CRC_values[7] = CRC;
 	} else if( Vars[i].Name.compare("phi") == 0) {
 	  for (ii=0; ii < NElems; ii++) {
 	    Hdata[ii].phi = *((float *)Data + ii);
+	  CRC_values[8] = CRC;
 	  }
 	}
 	Offsets_glb = Offsets;
+
 #else
 	if( Vars[i].Name.compare("id") == 0) {
 	  dtype = H5T_NATIVE_LONG;
 	} else if( Vars[i].Name.compare("mask") == 0) {
-	  dtype = H5T_NATIVE_B16;
+	  dtype = H5T_NATIVE_UINT16;
 	}else {
 	  dtype = H5T_NATIVE_FLOAT;
 	}
@@ -1366,8 +1383,8 @@ nocomp:
      */
     dset = H5Dcreate (gid, "DATA", Hmemtype, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
 
-    hsize_t	count[1];	          /* hyperslab selection parameters */
-    hsize_t	offset[1];
+    hsize_t count[1];	          /* hyperslab selection parameters */
+    hsize_t offset[1];
     herr_t status;
     count[0] = NElems;
     memspace = H5Screate_simple(1, count, NULL);
@@ -1390,6 +1407,26 @@ nocomp:
     status = H5Tclose (Hmemtype);
     free(Hdata);
 
+    // WRITE THE CRC data
+
+    hsize_t crc_dim[1] = {9};
+    file_dataspace = H5Screate(H5S_SIMPLE);
+    H5Sset_extent_simple(file_dataspace, 1, crc_dim, NULL);
+    dataset = H5Dcreate2(gid, "CRC_id_mask_x_y_z_vx_vy_vz_phi", H5T_NATIVE_ULONG, file_dataspace,
+    			 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    H5Sclose (file_dataspace);
+
+    t1 = MPI_Wtime();
+    if( Rank == 0 ) {
+      ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, H5S_ALL, H5S_ALL, H5P_DEFAULT, CRC_values);
+    } else {
+      mem_dataspace = H5Screate(H5S_NULL);
+      ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, mem_dataspace, H5P_DEFAULT, NULL);
+      H5Sclose (mem_dataspace);
+    }
+    H5Dclose (dataset);
+    
+    timer += MPI_Wtime()-t1;
   }
 #endif
 
@@ -1413,7 +1450,7 @@ nocomp:
     for (size_t i = 0; i < Vars.size(); ++i) {
       H5Dclose(multi_info[i].dset_id);
       H5Sclose(multi_info[i].mem_space_id);
-      H5Sclose( multi_info[i].dset_space_id);
+      H5Sclose(multi_info[i].dset_space_id);
     }
   }
 #endif
@@ -2108,7 +2145,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
   commRanks = 1;
 #endif
 
-  hid_t dset, attr_id, space, aspace;
+  hid_t dset, dset_id, space, aspace;
   hid_t dset_CRC;
   hid_t fid, dtype,dxpl_id;
   herr_t ret;
@@ -2120,7 +2157,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
   hsize_t start[1];			/* for hyperslab setting */
   hsize_t hypercount[1], stride[1];	/* for hyperslab setting */
   hsize_t sizedims[1];
-  uint64_t CRCv, CRC_loc;
+  uint64_t CRCv[9], CRC_loc;
   hsize_t dim_size[1];
   uint64_t read1_cs = 0;
 
@@ -2170,6 +2207,182 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 
    //sizedims[0] = 1;
     //   mem_dataspace_CRC = H5Screate_simple (1, sizedims, NULL);
+
+
+#ifdef HDF5_DERV
+   hid_t memtype;
+   dset = H5Dopen(fid, "/Variables/DATA", H5P_DEFAULT);
+   dtype = H5Dget_type(dset);
+   file_dataspace = H5Dget_space (dset);
+   H5Sget_simple_extent_dims(file_dataspace, dim_size, NULL);
+
+   uint64_t *Sendv = NULL;
+   if(Rank == 0)
+     Sendv = new uint64_t [commRanks*sizeof(uint64_t)];
+
+   MPI_Gather( &dims[0], 1, MPI_UINT64_T, Sendv, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); // fix comm MSB
+
+   uint64_t *sbufv;
+   sbufv = new uint64_t [commRanks*sizeof(uint64_t)];
+   
+   if(Rank == 0) {
+     sbufv[0] = 0;
+     int k;
+     for (k =0; k<commRanks; k++) {
+       // find offsets
+       if(k > 0)
+	 sbufv[k] = sbufv[k-1] + Sendv[k-1];
+       //	 cout << k << " : " << sbufv[k] << endl;
+     }
+     delete [] Sendv;
+   }
+
+   uint64_t Offsets;
+   MPI_Scatter( sbufv, 1, MPI_UINT64_T, &Offsets, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); 
+   delete [] sbufv;
+
+   start[0] =  Offsets;
+   hypercount[0] = dims[0];
+   stride[0] = 1;
+
+   //  cout << start[0] << endl;
+   //  cout <<  hypercount[0] << endl;
+
+   ret=H5Sselect_hyperslab(file_dataspace, H5S_SELECT_SET, start, stride,
+			   hypercount, NULL);
+
+   sizedims[0] = dims[0];
+
+   mem_dataspace = H5Screate_simple (1, sizedims, NULL);
+
+   Hdata = (hacc_t *) malloc (sizedims[0] * sizeof (hacc_t));
+   
+   if (!Hdata) cout << "NULLISH" << endl;
+
+   dxpl_id = H5Pcreate (H5P_DATASET_XFER);
+//     H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
+
+     //H5Pset_dxpl_checksum_ptr(dxpl_id, &read1_cs);
+
+   memtype = H5Tget_native_type(dtype, H5T_DIR_ASCEND);
+   
+   ret = H5Dread(dset, dtype, mem_dataspace, file_dataspace, dxpl_id, Hdata);
+
+   H5Pclose(dxpl_id);
+   ret = H5Sclose (mem_dataspace);
+   ret = H5Sclose (file_dataspace);
+   ret = H5Tclose (dtype);
+   ret = H5Dclose (dset);
+
+#if 0
+   if(Rank == 0) {
+     for(size_t j = 0; j < dims[0]; ++j) {
+       cout << j << " " << Hdata[j].id << endl;
+     }
+   }
+#endif
+
+   dset_id = H5Dopen(fid, "Variables/CRC_id_mask_x_y_z_vx_vy_vz_phi", H5P_DEFAULT);
+
+   ret = H5Dread(dset_id, H5T_NATIVE_ULONG, H5S_ALL, H5S_ALL, H5P_DEFAULT, &CRCv);
+   //  cout << "var size " << Vars[i].Size << endl;
+
+      // CRC calculation 
+   crc send[9];
+      // send.CRC64_size = dims[0]*Vars[i].Size; // MSB not sure why it does not work
+
+   send[0].CRC64_size = dims[0]*sizeof(long);
+   send[1].CRC64_size = dims[0]*sizeof(uint16_t);
+   send[2].CRC64_size = dims[0]*sizeof(float);
+   send[3].CRC64_size = dims[0]*sizeof(float);
+   send[4].CRC64_size = dims[0]*sizeof(float);
+   send[5].CRC64_size = dims[0]*sizeof(float);
+   send[6].CRC64_size = dims[0]*sizeof(float);
+   send[7].CRC64_size = dims[0]*sizeof(float);
+   send[8].CRC64_size = dims[0]*sizeof(float);
+
+   void *field;
+   hsize_t ii;
+   field = (long *)malloc(dims[0]*sizeof(long));
+   for (ii=0; ii < dims[0]; ii++)
+     *((long *)field + ii) = Hdata[ii].id;
+   send[0].CRC64 = crc64_omp(field, send[0].CRC64_size);
+   free(field);
+   field = (uint16_t *)malloc(dims[0]*sizeof(uint16_t));
+   for (ii=0; ii < dims[0]; ii++)
+     *((uint16_t *)field + ii) = Hdata[ii].mask;
+   send[1].CRC64 = crc64_omp(field, send[1].CRC64_size);
+   free(field);
+   field = (float *)malloc(dims[0]*sizeof(float));
+   for (ii=0; ii < dims[0]; ii++)
+     *((float *)field + ii) = Hdata[ii].x;
+   send[2].CRC64 = crc64_omp(field, send[2].CRC64_size);
+   for (ii=0; ii < dims[0]; ii++)
+     *((float *)field + ii) = Hdata[ii].y;
+   send[3].CRC64 = crc64_omp(field, send[3].CRC64_size);
+   for (ii=0; ii < dims[0]; ii++)
+     *((float *)field + ii) = Hdata[ii].z;
+   send[4].CRC64 = crc64_omp(field, send[4].CRC64_size);
+   for (ii=0; ii < dims[0]; ii++)
+     *((float *)field + ii) = Hdata[ii].vx;
+   send[5].CRC64 = crc64_omp(field, send[5].CRC64_size);
+   for (ii=0; ii < dims[0]; ii++)
+     *((float *)field + ii) = Hdata[ii].vy;
+   send[6].CRC64 = crc64_omp(field, send[6].CRC64_size);
+   for (ii=0; ii < dims[0]; ii++)
+     *((float *)field + ii) = Hdata[ii].vz;
+   send[7].CRC64 = crc64_omp(field, send[7].CRC64_size);
+   for (ii=0; ii < dims[0]; ii++)
+     *((float *)field + ii) = Hdata[ii].phi;
+   send[8].CRC64 = crc64_omp(field, send[8].CRC64_size);
+   free(field);
+
+   struct crc_s *rbufv;
+      
+   int          blocklengths[2] = {1,1};
+   MPI_Datatype types[2] = {MPI_UINT64_T, MPI_LONG_LONG_INT };
+   MPI_Datatype mpi_crc_type;
+   MPI_Aint     offsets[2];
+      
+   offsets[0] = offsetof(crc, CRC64);
+   offsets[1] = offsetof(crc, CRC64_size);
+
+   MPI_Type_create_struct(2, blocklengths, offsets, types, &mpi_crc_type);
+   MPI_Type_commit(&mpi_crc_type);
+
+   rbufv = NULL;
+   if(Rank == 0)
+     rbufv = new crc_s [9*commRanks*sizeof(struct crc_s)];
+
+   MPI_Gather( &send[0], 9, mpi_crc_type, rbufv, 9, mpi_crc_type, 0, MPI_COMM_WORLD);
+
+   if(Rank == 0) {
+
+     int icnt,ii;
+     for (ii=0; ii < 9; ii++) {
+       icnt = ii;
+       uint64_t CRC_sum = 0;
+       for (int k=0; k<commRanks; k++) {
+	 CRC_sum = crc64_combine(CRC_sum, rbufv[icnt].CRC64, rbufv[icnt].CRC64_size);
+	 icnt += 9 ;
+       }
+       cout << "Checking CRC for Dataset " << ii ;
+       if (CRCv[ii] != CRC_sum || CRC_sum == 0) {
+	 cout << " CRC error " << CRCv[ii] << " " << CRC_sum << endl;
+       } else {
+	 cout << " PASSED" << endl;
+       }
+     }
+   }
+   free(rbufv);
+
+   ret = H5Dclose(dset_id);
+  
+   MPI_Type_free(&mpi_crc_type);
+
+   free(Hdata);
+
+#else
 
    mem_dataspace_CRC = H5Screate(H5S_SCALAR);
 
@@ -2251,7 +2464,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
        Vsize = sizeof(long);
        Data = new long [dims[0]];
      } else if( Vars[i].Name.compare("/Variables/mask") == 0) {
-       dtype = H5T_NATIVE_B16;
+       dtype = H5T_NATIVE_UINT16;
        Vsize = 2;
        Data = new short int [dims[0]];
      } else  {
@@ -2283,7 +2496,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
      //    if(Rank==0) printf("Reading in CRC for Dataset %s \n",c_str3);
 
       //  cout << "2H5Dread" << ret << endl;
-#if 1
+#if 0
       attr_id = H5Dopen(fid, c_str3, H5P_DEFAULT);
       file_dataspace_CRC = H5Dget_space(attr_id);
 
@@ -2355,6 +2568,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
    
    H5Sclose(mem_dataspace_CRC);
 
+#endif
    
    //ret=H5Fclose(fid);
    MPI_Barrier(MPI_COMM_WORLD);
