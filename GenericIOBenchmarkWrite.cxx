@@ -45,6 +45,7 @@
 #include <cmath>
 #include <algorithm>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <cassert>
 
@@ -120,10 +121,17 @@ int main(int argc, char *argv[]) {
   GenericIO::setNaturalDefaultPartition();
 
   char *mpiioName = argv[a++];
-  size_t Np = atoi(argv[a++])/commRanks;
-  int seed = atoi(argv[a++]);
+  std::string  TNpS(argv[a++]);
+  std::istringstream iss(TNpS);
+  uint64_t TNp;
+  iss>>TNp;
+  size_t Np = TNp/commRanks;
+  //size_t Np = atoi(argv[a++])/commRanks;
+  
+  //int seed = atoi(argv[a++]);
 
-  srand48(seed + commRank);
+  //srand48(seed + commRank);
+  srand48(TNp + commRank);
 
   // Add a 2% variance to make things a bit more realistic.
   Np = double(Np)*(1.0 + (drand48() - 0.5)*0.02);
