@@ -2291,6 +2291,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 
    memtype = H5Tget_native_type(dtype, H5T_DIR_ASCEND);
    
+   FileSize = H5Dget_storage_size(dset);
    ret = H5Dread(dset, dtype, mem_dataspace, file_dataspace, dxpl_id, Hdata);
 
    H5Pclose(dxpl_id);
@@ -2422,7 +2423,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
      free(rtimers);
    }
   if (Rank == 0) {
-    FileSize = H5Dget_storage_size(dset_id);
+    cout << FileSize << endl;
     printf("READ DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", mean/commRanks, min, max,
 	   (double)FileSize/(mean/commRanks) / (1024.*1024.), 
 	   (double)FileSize/min/(1024.*1024.), (double)FileSize/max/(1024.*1024.) );
@@ -2668,8 +2669,6 @@ void GenericIO::readData(int EffRank, size_t RowOffset, int Rank,
       size_t VNameNull = VName.find('\0');
       if (VNameNull < NameSize)
         VName.resize(VNameNull);
-
-      cout << Rank << "  " << RH->NElems << endl;
 
       uint64_t ReadSize = RH->NElems*VH->Size + CRCSize;
       if (VName != Vars[i].Name) {
