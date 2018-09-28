@@ -2571,7 +2571,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 #endif
    
    //ret=H5Fclose(fid);
-   MPI_Barrier(MPI_COMM_WORLD);
+   //MPI_Barrier(MPI_COMM_WORLD);
    // cout << "after close" << endl;
 
    delete[] c_str;
