@@ -1457,14 +1457,24 @@ nocomp:
 #endif
 
   double mean=0;
+  double min;
+  double max;
   double *rtimers=NULL;
   if(Rank == 0)  {
     rtimers = (double *) malloc(NRanks*sizeof(double));
   }
   MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   if(Rank == 0)  {
-    for(int n = 0; n < NRanks; n++) {
+
+    min = rtimers[0];
+    max = min;
+
+    for(int n = 1; n < NRanks; n++) {
+      if(rtimers[n] > max)
+	max=rtimers[n];
       mean += rtimers[n];
+      if(rtimers[n] < min)
+	min=rtimers[n];
     }
     free(rtimers);
   }
@@ -1487,7 +1497,9 @@ nocomp:
   }
 
   if (Rank == 0) {
-    printf("WRITE DATA = %.4f s,  %.4f MB/s \n", mean/NRanks,( (double) FileSize) / (mean/NRanks) / (1024.*1024.));
+    printf("WRITE DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", mean/NRanks, min, max,
+	   (double)FileSize/(mean/NRanks) / (1024.*1024.), 
+	   (double)FileSize/min/(1024.*1024.), (double)FileSize/max/(1024.*1024.) );
     double Rate = ((double) FileSize) / MaxTotalTime / (1024.*1024.);
     cout << NRanks << " Procs Wrote " << Vars.size() << " variables to " << FileName <<
             " (" << FileSize << " bytes) in " << MaxTotalTime << "s: " <<
@@ -2161,6 +2173,13 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
   hsize_t dim_size[1];
   uint64_t read1_cs = 0;
 
+  hsize_t FileSize;
+  double mean=0;
+  double min;
+  double max;
+  double t1, timer;
+  double *rtimers=NULL;
+
   //   cout << Vars[7].IsFloat << " aaa " << Vars[7].IsPhysCoordX <<  endl;
   //  cout << Vars[8].Size << endl;
   // cout << "inside readData" << Vars.size() << endl;
@@ -2210,6 +2229,12 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 
 
 #ifdef HDF5_DERV
+
+  if(Rank == 0)  {
+    rtimers = (double *) malloc(commRanks*sizeof(double));
+  }
+
+   t1 =  MPI_Wtime();
    hid_t memtype;
    dset = H5Dopen(fid, "/Variables/DATA", H5P_DEFAULT);
    dtype = H5Dget_type(dset);
@@ -2273,6 +2298,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
    ret = H5Sclose (file_dataspace);
    ret = H5Tclose (dtype);
    ret = H5Dclose (dset);
+   timer = MPI_Wtime()-t1;
 
 #if 0
    if(Rank == 0) {
@@ -2356,6 +2382,8 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 
    MPI_Gather( &send[0], 9, mpi_crc_type, rbufv, 9, mpi_crc_type, 0, MPI_COMM_WORLD);
 
+   MPI_Type_free(&mpi_crc_type);
+
    if(Rank == 0) {
 
      int icnt,ii;
@@ -2376,11 +2404,31 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
    }
    free(rbufv);
 
-   ret = H5Dclose(dset_id);
-  
-   MPI_Type_free(&mpi_crc_type);
-
    free(Hdata);
+
+   MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+   if(Rank == 0)  {
+     
+     min = rtimers[0];
+     max = min;
+     mean = min;
+     for(int n = 1; n < commRanks; n++) {
+       if(rtimers[n] > max)
+	 max=rtimers[n];
+       mean += rtimers[n];
+       if(rtimers[n] < min)
+	 min=rtimers[n];
+     }
+     free(rtimers);
+   }
+  if (Rank == 0) {
+    FileSize = H5Dget_storage_size(dset_id);
+    printf("READ DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", mean/commRanks, min, max,
+	   (double)FileSize/(mean/commRanks) / (1024.*1024.), 
+	   (double)FileSize/min/(1024.*1024.), (double)FileSize/max/(1024.*1024.) );
+  }
+
+  ret = H5Dclose(dset_id);
 
 #else
 
