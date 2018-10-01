@@ -2424,7 +2424,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
    }
   if (Rank == 0) {
     cout << FileSize << endl;
-    printf("READ DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", mean/commRanks, min, max,
+    printf("%d READ DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", commRanks, mean/commRanks, min, max,
 	   (double)FileSize/(mean/commRanks) / (1024.*1024.), 
 	   (double)FileSize/min/(1024.*1024.), (double)FileSize/max/(1024.*1024.) );
   }
