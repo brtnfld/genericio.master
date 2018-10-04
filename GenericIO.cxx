@@ -79,7 +79,7 @@ H5D_rw_multi_t multi_info[9];
 #endif
 
 // COMPOUND TYPE METHOD
-#define HDF5_DERV
+//#define HDF5_DERV
 #ifdef HDF5_DERV
 typedef struct {
   int64_t id;
@@ -424,6 +424,13 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 
   std::strcpy(c_str, D.c_str());
 
+  int64_t position[1];
+  position[0] = (int64_t)offset;
+
+  damaris_set_position(c_str, position);
+  damaris_write(c_str, buf);
+
+  return;
 
   if( (sid = H5Screate_simple (1, dims, NULL)) < 0)
       throw runtime_error( "Unable to create HDF5 space: " );
@@ -1343,7 +1350,7 @@ nocomp:
 	}else {
 	  dtype = H5T_NATIVE_FLOAT;
 	}
-	
+
 	gfio_hdf->write_hdf(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem, i);
 #endif
       } else 
@@ -1366,6 +1373,8 @@ nocomp:
     Offset += WriteSize + CRCSize;
   }
 #ifdef GENERICIO_HAVE_HDF
+
+  damaris_end_iteration();
 
 #ifdef HDF5_DERV
   if (FileIOType == FileIOHDF) {

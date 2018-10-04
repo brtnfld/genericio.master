@@ -49,6 +49,8 @@
 #include <limits>
 #include <stdint.h>
 
+#include "Damaris.h"
+
 #ifndef GENERICIO_NO_MPI
 #include <mpi.h>
 #else

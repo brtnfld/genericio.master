@@ -42,6 +42,10 @@ CXX = mpicxx
 MPICC = mpicc
 MPICXX = mpicxx
 HDF_DIR = $(HOME)/packages/hdf5_multi/build/hdf5
+DAMARIS_DIR = $(HOME)/packages/damaris/damaris/damaris
+XERCES_DIR = $(HOME)/packages/xerces-c-3.2.0/xerces
+XSD_DIR = $(HOME)/packages/xsd-4.0.0+dep/xsd_build
+BOOST_DIR = $(HOME)/packages/boost_1_66_0/build_boost
 
 #HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
 #HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build.edison/hdf5
@@ -78,8 +82,10 @@ ifeq ($(DEF),-DGENERICIO_HAVE_HDF)
 HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -ldl
 HDF_INC = -I$(HDF_DIR)/include
 endif
-LIB = $(HDF_LIB) #-lirc
-INC = $(HDF_INC)
+LIB = $(HDF_LIB) $(DAMARIS_DIR)/lib/libdamaris.a $(XERCES_DIR)/lib/libxerces-c.a \
+$(BOOST_DIR)/lib/libboost_thread-mt.a $(BOOST_DIR)/lib/libboost_log-mt.a $(BOOST_DIR)/lib/libboost_log_setup-mt.a $(BOOST_DIR)/lib/libboost_filesystem-mt.a $(BOOST_DIR)/lib/libboost_system-mt.a $(BOOST_DIR)/lib/libboost_date_time-mt.a -lrt
+
+INC = $(HDF_INC) -I$(DAMARIS_DIR)/include -I$(XERCES_DIR)/include -I$(XSD_DIR)/include/xsd/cxx -I$(BOOST_DIR)/include/boost
 
 
 all: fe-progs mpi-progs 
