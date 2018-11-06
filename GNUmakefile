@@ -41,11 +41,11 @@ CC = mpicc
 CXX = mpicxx
 MPICC = mpicc
 MPICXX = mpicxx
-HDF_DIR = $(HOME)/packages/hdf5_multi/build/hdf5
-DAMARIS_DIR = $(HOME)/packages/damaris/damaris/damaris
-XERCES_DIR = $(HOME)/packages/xerces-c-3.2.0/xerces
-XSD_DIR = $(HOME)/packages/xsd-4.0.0+dep/xsd_build
-BOOST_DIR = $(HOME)/packages/boost_1_66_0/build_boost
+#HDF_DIR = $(HOME)/packages/hdf5_multi/build/hdf5
+#DAMARIS_DIR = $(HOME)/packages/damaris/damaris/damaris
+#XERCES_DIR = $(HOME)/packages/xerces-c-3.2.0/xerces
+#XSD_DIR = $(HOME)/packages/xsd-4.0.0+dep/xsd_build
+#BOOST_DIR = $(HOME)/packages/boost_1_66_0/build_boost
 
 #HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
 #HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build.edison/hdf5
@@ -55,7 +55,7 @@ BOOST_DIR = $(HOME)/packages/boost_1_66_0/build_boost
 #ZLIB_DIR = $(HOME)/packages/zlib-1.2.8/zlib$(TYPE)/lib
 
 #TYPE=".intel"
-
+LIB = -ldamaris -lxerces-c -lboost_system-mt -lboost_filesystem-mt -lboost_log-mt -lboost_thread-mt -lboost_log-mt -lboost_log_setup-mt -lhdf5
 HOST=$(shell uname -n | sed 's/[0-9]*//g')
 ifeq ($(HOST), cori)
    FE_CFLAGS = -fPIC
@@ -65,7 +65,7 @@ ifeq ($(HOST), cori)
    MPICXX = CC
 endif
 ifeq ($(HOST), edison)
-   FE_CFLAGS = -fPIC
+   FE_CFLAGS = -fPIC 
    CC  = cc
    CXX = CC
    MPICC = cc
@@ -79,14 +79,13 @@ DEF = -DGENERICIO_HAVE_HDF
 
 ifeq ($(DEF),-DGENERICIO_HAVE_HDF)
 #HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -L$(ZLIB_DIR) -lz
-HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -ldl
-HDF_INC = -I$(HDF_DIR)/include
+#HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -ldl
+#HDF_INC = -I$(HDF_DIR)/include
 endif
-LIB = $(HDF_LIB) $(DAMARIS_DIR)/lib/libdamaris.a $(XERCES_DIR)/lib/libxerces-c.a \
-$(BOOST_DIR)/lib/libboost_thread-mt.a $(BOOST_DIR)/lib/libboost_log-mt.a $(BOOST_DIR)/lib/libboost_log_setup-mt.a $(BOOST_DIR)/lib/libboost_filesystem-mt.a $(BOOST_DIR)/lib/libboost_system-mt.a $(BOOST_DIR)/lib/libboost_date_time-mt.a -lrt
+#LIB = $(HDF_LIB) $(DAMARIS_DIR)/lib/libdamaris.a $(XERCES_DIR)/lib/libxerces-c.a \
+#$(BOOST_DIR)/lib/libboost_thread-mt.a $(BOOST_DIR)/lib/libboost_log-mt.a $(BOOST_DIR)/lib/libboost_log_setup-mt.a $(BOOST_DIR)/lib/libboost_filesystem-mt.a $(BOOST_DIR)/lib/libboost_system-mt.a $(BOOST_DIR)/lib/libboost_date_time-mt.a -lrt
 
-INC = $(HDF_INC) -I$(DAMARIS_DIR)/include -I$(XERCES_DIR)/include -I$(XSD_DIR)/include/xsd/cxx -I$(BOOST_DIR)/include/boost
-
+#INC = $(HDF_INC) -I$(DAMARIS_DIR)/include -I$(XERCES_DIR)/include -I$(XSD_DIR)/include/xsd/cxx -I$(BOOST_DIR)/include/boost
 
 all: fe-progs mpi-progs 
 sql: fe-sqlite
