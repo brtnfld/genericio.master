@@ -58,6 +58,8 @@
 using namespace std;
 using namespace gio;
 
+extern MPI_Comm DComm;
+
 template <typename T>
 struct Generator {
     Generator(T start, T inc) : value(start), inc(inc) {}
@@ -111,11 +113,13 @@ int main(int argc, char *argv[]) {
     ++a;
   }
 
+
   if (argc > 1 && string(argv[a]) == "-c") {
     GenericIO::setDefaultShouldCompress(true);
     --argc;
     ++a;
   }
+
 
   if(argc != 5) {
     fprintf(stderr,"USAGE: %s [-a] [-c] <mpiioName> <NP> <seed> <DamarisFile>\n", argv[0]);
@@ -155,14 +159,14 @@ int main(int argc, char *argv[]) {
 
   err = damaris_start(&is_client);
 
-
   if((err == DAMARIS_OK || err == DAMARIS_NO_SERVER) && is_client) {
 
     MPI_Comm comm;
     damaris_client_comm_get(&comm);
     
     //    damaris_parameter_get("domains",&domains,sizeof(int));
-    
+    DComm = comm;
+
     MPI_Comm_rank(comm , &commRank);
     MPI_Comm_size(comm , &commRanks);
 

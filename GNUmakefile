@@ -73,6 +73,7 @@ ifeq ($(HOST), edison)
 endif
 ifeq ($(HOST), jelly)
    FE_CFLAGS = -fPIC
+   LIB += -L$(HOME)/packages/spack/opt/spack/linux-centos7-x86_64/gcc-5.3.0/boost-1.68.0-nopsl7e3b54n5bq6aw7pxbfe3lzz6xhr/lib/
 endif
 
 DEF = -DGENERICIO_HAVE_HDF

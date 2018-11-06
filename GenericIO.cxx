@@ -100,6 +100,8 @@ uint64_t CRC_values[9];
 
 #endif
 
+MPI_Comm DComm;
+
 using namespace std;
 
 namespace gio {
@@ -832,6 +834,9 @@ void GenericIO::write() {
   uint64_t FileSize = 0;
 
   int NRanks, Rank;
+
+  Comm = DComm;
+
   MPI_Comm_rank(Comm, &Rank);
   MPI_Comm_size(Comm, &NRanks);
 
@@ -1153,6 +1158,7 @@ nocomp:
 #ifdef GENERICIO_HAVE_HDF
   GenericFileIO_HDF *gfio_hdf;
 
+#if 0
   if (FileIOType == FileIOHDF) {
     gfio_hdf = dynamic_cast<GenericFileIO_HDF *> (FH.get());
     fid = gfio_hdf->get_fileid();
@@ -1201,6 +1207,7 @@ nocomp:
   }
 #endif
 
+
 #ifdef HDF5_DERV
   Hdata = (hacc_t *) malloc (NElems * sizeof (hacc_t));
 
@@ -1226,6 +1233,7 @@ nocomp:
 
 #endif
 
+#endif
   uint64_t Offsets_glb;
 	
   double t1, timer=0.;
@@ -1277,7 +1285,8 @@ nocomp:
 	}
 	sbufv = new uint64_t [NRanks*sizeof(uint64_t)];
 
-	MPI_Gather( &send, 1, mpi_crc_type, rbufv, 1, mpi_crc_type, 0, MPI_COMM_WORLD);
+	//	MPI_Gather( &send, 1, mpi_crc_type, rbufv, 1, mpi_crc_type, 0, MPI_COMM_WORLD);
+	MPI_Gather( &send, 1, mpi_crc_type, rbufv, 1, mpi_crc_type, 0, DComm);
 	if(Rank == 0) {
 	  uint64_t CRC_sum = 0;
 	  sbufv[0] = 0;
@@ -1295,10 +1304,13 @@ nocomp:
 	} else
 	  CRC = 0;
 
+	//printf("aasdflj\n");
 	uint64_t Offsets;
-	MPI_Scatter( sbufv, 1, MPI_UINT64_T, &Offsets, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); 
+	//	MPI_Scatter( sbufv, 1, MPI_UINT64_T, &Offsets, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); 
+	MPI_Scatter( sbufv, 1, MPI_UINT64_T, &Offsets, 1, MPI_UINT64_T, 0, DComm); 
 	delete sbufv;
 	MPI_Type_free(&mpi_crc_type);
+
 
 #ifdef HDF5_DERV
 	hsize_t ii;
@@ -1351,6 +1363,7 @@ nocomp:
 	  dtype = H5T_NATIVE_FLOAT;
 	}
 
+	//printf("gfio_hdf->write_hdf\n");
 	gfio_hdf->write_hdf(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem, i);
 #endif
       } else 
@@ -1472,7 +1485,7 @@ nocomp:
   if(Rank == 0)  {
     rtimers = (double *) malloc(NRanks*sizeof(double));
   }
-  MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, DComm);
   if(Rank == 0)  {
 
     min = rtimers[0];
@@ -1488,9 +1501,11 @@ nocomp:
     free(rtimers);
   }
 
+#if 0 // MSB
 #ifdef GENERICIO_HAVE_HDF
   if (FileIOType == FileIOHDF)
     ret = H5Gclose(gid);
+#endif
 #endif
   close();
   MPI_Barrier(Comm);
@@ -1624,12 +1639,10 @@ void GenericIO::readHeaderLeader(void *GHPtr, MismatchBehavior MB, int NRanks,
   GenericIO GIO(FileName, FileIOType);
 #endif
   FH.get()->open(FileName, true);
-
 #ifdef GENERICIO_HAVE_HDF
   GenericFileIO_HDF *gfio_hdf = dynamic_cast<GenericFileIO_HDF *> (FH.get());
   *Numel = gfio_hdf->get_NumElem();
 #endif
-
 
   return;
 }
