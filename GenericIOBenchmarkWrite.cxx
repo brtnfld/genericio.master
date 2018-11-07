@@ -136,8 +136,8 @@ int main(int argc, char *argv[]) {
   //uint64_t TNp;
   //iss>>TNp;
 
-  int TNp;
-  damaris_parameter_get("TNp",&TNp,sizeof(int));
+  size_t TNp;
+  damaris_parameter_get("TNp",&TNp,sizeof(size_t));
 
   int size;
   damaris_parameter_get("size",&size,sizeof(int));
