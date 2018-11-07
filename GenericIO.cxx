@@ -211,8 +211,8 @@ void GenericFileIO_MPICollective::write(const void *buf, size_t count, off_t off
 GenericFileIO_HDF::~GenericFileIO_HDF() {
   herr_t ret;
   const char *EnvStr = getenv("GENERICIO_USE_HDF");
-  if (EnvStr)
-    ret=H5Fclose(FH);
+  //  if (EnvStr)
+  //  ret=H5Fclose(FH); // MSB
 }
 hid_t GenericFileIO_HDF::get_fileid() {
   return this->FH;
@@ -282,13 +282,13 @@ size_t GenericFileIO_HDF::get_NumElem() {
   FileName = FN;
 
   //  cout << "in open" << endl;
-
+  fid = -1;
   if ( ForReading) {
     if( (fid = H5Fopen(const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,fapl_id)) < 0)
       throw runtime_error( ("Unable to open the file: ") + FileName);
-  } else {
-    if( (fid = H5Fcreate(const_cast<char *>(FileName.c_str()),H5F_ACC_TRUNC,fcpl_id,fapl_id)) < 0)
-      throw runtime_error( ("Unable to create the file: ") + FileName);
+    //  } else {
+    //if( (fid = H5Fcreate(const_cast<char *>(FileName.c_str()),H5F_ACC_TRUNC,fcpl_id,fapl_id)) < 0)
+    //  throw runtime_error( ("Unable to create the file: ") + FileName);
   }
   /* Get read context */
   MPI_Info_free(&info);  
@@ -409,8 +409,8 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
   hsize_t sizedims[1], adims[1];
   int commRank, commRanks;
   double t1, timer;
-  MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
-  MPI_Comm_size(MPI_COMM_WORLD, &commRanks); 
+  MPI_Comm_rank(DComm, &commRank);
+  MPI_Comm_size(DComm, &commRanks); 
 
   adims[0] = (hsize_t)commRanks;
   dims[0] = (hsize_t)Totnumel;
