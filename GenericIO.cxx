@@ -258,6 +258,8 @@ size_t GenericFileIO_HDF::get_NumElem() {
   fapl_id = H5Pcreate (H5P_FILE_ACCESS);
   //ret = H5Pset_fapl_mpiposix(fapl_id, Comm, 0); 
   ret = H5Pset_fapl_mpio(fapl_id, Comm, info);
+  H5Pset_coll_metadata_write(fapl_id, 1);
+  H5Pset_all_coll_metadata_ops(fapl_id, 1);
   H5Pset_libver_bounds(fapl_id, H5F_LIBVER_LATEST, H5F_LIBVER_LATEST);
   H5Pset_fclose_degree(fapl_id,H5F_CLOSE_WEAK);
   fcpl_id = H5Pcreate(H5P_FILE_CREATE);  
@@ -1412,9 +1414,14 @@ nocomp:
     hsize_t crc_dim[1] = {9};
     file_dataspace = H5Screate(H5S_SIMPLE);
     H5Sset_extent_simple(file_dataspace, 1, crc_dim, NULL);
+
+    hid_t dcpl = H5Pcreate (H5P_DATASET_CREATE);
+    status = H5Pset_layout (dcpl, H5D_COMPACT);
+
     dataset = H5Dcreate2(gid, "CRC_id_mask_x_y_z_vx_vy_vz_phi", H5T_NATIVE_ULONG, file_dataspace,
-    			 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    			 H5P_DEFAULT, dcpl, H5P_DEFAULT);
     H5Sclose (file_dataspace);
+    H5Pclose (dcpl);
 
     t1 = MPI_Wtime();
     if( Rank == 0 ) {
