@@ -42,10 +42,10 @@ CXX = mpicxx
 MPICC = mpicc
 MPICXX = mpicxx
 #HDF_DIR = $(HOME)/packages/hdf5_multi/build/hdf5
-#DAMARIS_DIR = $(HOME)/packages/damaris/damaris/damaris
+DAMARIS_DIR = $(HOME)/packages/damaris-development/build
 #XERCES_DIR = $(HOME)/packages/xerces-c-3.2.0/xerces
 #XSD_DIR = $(HOME)/packages/xsd-4.0.0+dep/xsd_build
-#BOOST_DIR = $(HOME)/packages/boost_1_66_0/build_boost
+BOOST_DIR = $(HOME)/packages/spack/opt/spack/cray-cnl6-ivybridge/gcc-7.3.0/boost-1.68.0-smi5pwp7dg6tqper3jvvnuvl64p6l6n4
 
 #HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
 #HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build.edison/hdf5
@@ -55,7 +55,7 @@ MPICXX = mpicxx
 #ZLIB_DIR = $(HOME)/packages/zlib-1.2.8/zlib$(TYPE)/lib
 
 #TYPE=".intel"
-LIB = -ldamaris -lxerces-c -lboost_system-mt -lboost_filesystem-mt -lboost_log-mt -lboost_thread-mt -lboost_log-mt -lboost_log_setup-mt -lhdf5
+LIB = -L$(DAMARIS_DIR)/lib -ldamaris -lboost_regex-mt -lboost_date_time-mt -lboost_chrono-mt -lboost_atomic-mt -lxerces-c -lboost_system-mt -lboost_filesystem-mt -lboost_log-mt -lboost_thread-mt -lboost_log-mt -lboost_log_setup-mt -lhdf5
 HOST=$(shell uname -n | sed 's/[0-9]*//g')
 ifeq ($(HOST), cori)
    FE_CFLAGS = -fPIC
@@ -70,6 +70,7 @@ ifeq ($(HOST), edison)
    CXX = CC
    MPICC = cc
    MPICXX = CC
+   LIB += -L$(BOOST_DIR)/lib/
 endif
 ifeq ($(HOST), jelly)
    FE_CFLAGS = -fPIC
@@ -87,6 +88,7 @@ endif
 #$(BOOST_DIR)/lib/libboost_thread-mt.a $(BOOST_DIR)/lib/libboost_log-mt.a $(BOOST_DIR)/lib/libboost_log_setup-mt.a $(BOOST_DIR)/lib/libboost_filesystem-mt.a $(BOOST_DIR)/lib/libboost_system-mt.a $(BOOST_DIR)/lib/libboost_date_time-mt.a -lrt
 
 #INC = $(HDF_INC) -I$(DAMARIS_DIR)/include -I$(XERCES_DIR)/include -I$(XSD_DIR)/include/xsd/cxx -I$(BOOST_DIR)/include/boost
+INC = -I$(DAMARIS_DIR)/include
 
 all: fe-progs mpi-progs 
 sql: fe-sqlite
