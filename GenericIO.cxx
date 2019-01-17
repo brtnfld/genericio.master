@@ -79,7 +79,7 @@ H5D_rw_multi_t multi_info[9];
 #endif
 
 // COMPOUND TYPE METHOD
-//#define HDF5_DERV
+#define HDF5_DERV
 #ifdef HDF5_DERV
 typedef struct {
   int64_t id;
@@ -827,7 +827,7 @@ void GenericIO::write_hdf() {
   double StartTime = MPI_Wtime();
 
   GenericFileIO_HDF *gfio_hdf;
-  // The communicator may be COMM_SELF for indedpend IO?
+  // The communicator may be COMM_SELF for independent IO?
   FH.get() = new GenericFileIO_HDF(MPI_COMM_WORLD);
   FH.get()->open(FileName);
 
@@ -1138,6 +1138,8 @@ void GenericIO::write_hdf() {
 
   if (FileIOType == FileIOHDF)
     ret = H5Gclose(gid);
+
+  // Here we want to set the 
   close();
   //MPI_Barrier(Comm);
 
@@ -1147,12 +1149,25 @@ void GenericIO::write_hdf() {
   MPI_Reduce(&TotalTime, &MaxTotalTime, 1, MPI_DOUBLE, MPI_MAX, 0, Comm);
 
   if (Rank == 0) {
+    // Obtain file size, this is just for benchmarking purpose.We can set the file size to genericIO by using H5Fgetsize.
+    hid_t fid = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
+    if(fid <0)
+        throw runtime_error( ("Unable to open the file: ") + FileName);
+    hsize_t h5_filesize=0;
+    if(H5Fget_filesize(fid,&h5_filesize)<0) {
+        H5Fclose(fid);
+        throw runtime_error( ("Unable to the HDF5 file size: ") + FileName);
+    }
+    H5Fclose(fid);
+#if defined(HDF5_DERV) || defined(HDF5_HAVE_MULTI_DATASETS)        
     printf("WRITE DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", mean/NRanks, min, max,
-	   (double)FileSize/(mean/NRanks) / (1024.*1024.), 
-	   (double)FileSize/min/(1024.*1024.), (double)FileSize/max/(1024.*1024.) );
-    double Rate = ((double) FileSize) / MaxTotalTime / (1024.*1024.);
+	   (double)h5_filesize/(mean/NRanks) / (1024.*1024.), 
+	   (double)h5_filesize/min/(1024.*1024.), (double)h5_filesize/max/(1024.*1024.) );
+#endif
+
+    double Rate = ((double) h5_filesize) / MaxTotalTime / (1024.*1024.);
     cout << NRanks << " Procs Wrote " << Vars.size() << " variables to " << FileName <<
-            " (" << FileSize << " bytes) in " << MaxTotalTime << "s: " <<
+            " (" << h5_filesize << " bytes) in " << MaxTotalTime << "s: " <<
             Rate << " MB/s" << endl;
   }
 
