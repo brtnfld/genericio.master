@@ -1231,7 +1231,7 @@ void GenericIO::write_hdf() {
 template <bool IsBigEndian>
 void GenericIO::write() {
 
-cerr<<"coming to write "<<endl;
+//cerr<<"coming to write "<<endl;
  bool use_hdf5 = false;
  const char *EnvStr1 = getenv("GENERICIO_USE_HDF");
  if (EnvStr1 && string(EnvStr1) == "1"){
@@ -1243,7 +1243,7 @@ cerr<<"coming to write "<<endl;
   write_hdf();
 //#else 
  else {
-cerr<<"coming to mpiio "<<endl;
+//cerr<<"coming to mpiio "<<endl;
   const char *Magic = IsBigEndian ? MagicBE : MagicLE;
 
   uint64_t FileSize = 0;
