@@ -2433,6 +2433,114 @@ void GenericIO::readHeaderLeader(void *GHPtr, MismatchBehavior MB, int NRanks,
     throw runtime_error("Header CRC check failed: " + LocalFileName);
   }
 }
+void GenericIO::openAndReadHeader_HDF_Simple() {
+
+  int NRanks, Rank;
+#ifndef GENERICIO_NO_MPI
+  MPI_Comm_rank(Comm, &Rank);
+  MPI_Comm_size(Comm, &NRanks);
+#else
+  Rank = 0;
+  NRanks = 1;
+#endif
+
+//The following code makes each process to open the file independently.
+//For us, we just need to use one process to open the HDF5 file to
+//obtain the total number of elements and chunk size. So we just open
+//the HDF5 file, peek the information and close it. 
+
+  uint64_t num_elems_array[2]; 
+  uint64_t recv_num_elems_array[2];
+#ifndef GENERICIO_NO_MPI
+#ifdef GENERICIO_HAVE_HDF
+  if(Rank == 0) {
+    hid_t h5file_id = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
+    if(h5file_id <0)
+        throw runtime_error( ("Unable to open the file: ") + FileName);
+
+    // The 
+    hid_t h5dset_id  = -1;
+    string dsetname;
+    // We can do more to find the fit variable name. Here just make it simple and fast.
+#ifdef HDF5_DERV 
+    dsetname = "/Variables/DATA";
+    h5dset_id = H5Dopen2(h5file_id,const_cast<char *>(dsetname.c_str()),H5P_DEFAULT);
+#else 
+    dsetname = "/Variables/id";
+    h5dset_id = H5Dopen2(h5file_id,const_cast<char *>(dsetname.c_str()),H5P_DEFAULT);
+#endif
+    if(h5dset_id <0) {
+      H5Fclose(h5file_id);
+      throw runtime_error( ("Unable to open the dataset: ") + dsetname);
+    }
+
+    hid_t h5dspace_id = H5Dget_space(h5dset_id);
+    hssize_t h5dset_nelems = H5Sget_simple_extent_npoints(h5dspace_id);
+
+    // We can add the retrieval of chunking information later. 
+    
+    H5Sclose(h5dspace_id);
+    H5Dclose(h5dset_id);
+    H5Fclose(h5file_id);
+
+    uint64_t num_elems_0 = (h5dset_nelems/NRanks);
+    num_elems_array[0] = h5dset_nelems;
+
+    // Without optimization, just make the number of elements evenly 
+    // distributed among processes.
+    num_elems_array[1] = (h5dset_nelems/NRanks);
+    setTotElem(num_elems_array[0]);
+    if((uint64_t)(size_t)num_elems_array[1]!=num_elems_array[1])
+        throw runtime_error( "The datatype size_t causes the overflow for number of elements per process. ");
+    setNumElems((size_t)num_elems_array[1]);
+
+    //uint64_t num_elems_last = h5dset_nelems -(NRanks-1)*num_elems_0;
+    //MPI_Send(&num_elems_last,1,MPI_UINT64_T,NRank-1,1,Comm);
+  }
+  MPI_Scatter( num_elems_array, 2, MPI_UINT64_T, recv_num_elems_array, 2, MPI_UINT64_T, 0, Comm);
+
+  if(Rank !=0) {
+    setTotElem(recv_num_elems_array[0]);
+    if((uint64_t)(size_t)recv_num_elems_array[1]!=recv_num_elems_array[1])
+        throw runtime_error( "The datatype size_t causes the overflow for number of elements per process. ");
+    setNumElems((size_t)recv_num_elems_array[1]);
+
+  }
+#if 0
+  if(Rank == (NRanks-1)) {
+    uint64_t num_elems_last = 0;
+    MPI_Recv(&num_elems_last,1,MPI_UINT64_T,1,1,Comm);
+    setNumElems((size_t)num_elems_last);
+  }
+  else {
+    setNumElems((size_t)num_elems);
+  }
+#endif
+#endif
+
+
+  
+#if 0
+#ifndef GENERICIO_NO_MPI
+  GenericIO GIO(MPI_COMM_SELF, FileName, FileIOType);
+#ifdef GENERICIO_HAVE_HDF 
+  FH.get() = new GenericFileIO_HDF(MPI_COMM_SELF);
+#endif
+#else
+  GenericIO GIO(FileName, FileIOType);
+#endif
+  FH.get()->open(FileName, true);
+
+#ifdef GENERICIO_HAVE_HDF
+  GenericFileIO_HDF *gfio_hdf = dynamic_cast<GenericFileIO_HDF *> (FH.get());
+  *Numel = gfio_hdf->get_NumElem();
+#endif
+#endif
+#endif
+
+
+
+}
 
   void GenericIO::openAndReadHeader_HDF(size_t *Numel, bool MustMatch, int EffRank, bool CheckPartMap) {
   int NRanks, Rank;
@@ -2922,9 +3030,11 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
   int NErrs[3] = { 0, 0, 0 };
 
   if (EffRank == -1 && Redistributing) {
+cerr<<"Redistributing "<<endl;
     DisableCollErrChecking = true;
 
     size_t RowOffset = 0;
+cerr<<"SourceRanks.size() is "<<SourceRanks.size() <<endl;
     for (int i = 0, ie = SourceRanks.size(); i != ie; ++i) {
       readData(SourceRanks[i], RowOffset, Rank, TotalReadSize, NErrs);
       RowOffset += readNumElems(SourceRanks[i]);
@@ -2932,6 +3042,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 
     DisableCollErrChecking = false;
   } else {
+cerr<<"No Redistributing "<<endl;
     readData(EffRank, 0, Rank, TotalReadSize, NErrs);
   }
 
@@ -3469,6 +3580,243 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 }
 #endif
 
+// Implement a simple read module. Only data for both derived and 9 vars.
+// Make sure to send the nelems from rank 0 to rank NRank-1 for the Nelems.
+// Or we can add an offset element and just scatter 2 elements.KY
+#ifdef GENERICIO_HAVE_HDF
+  void GenericIO::readDataHDF_Simple() {
+  int Rank, commRanks;
+
+  std::vector<std::string> v;
+#ifndef GENERICIO_NO_MPI
+  MPI_Comm_rank(Comm, &Rank);
+  MPI_Comm_size(Comm, &commRanks);
+#else
+  Rank = 0;
+  commRanks = 1;
+#endif
+
+  hid_t dset, dset_id, space, aspace;
+  hid_t dset_CRC;
+  hid_t fid, dtype,dxpl_id;
+  herr_t ret;
+  hsize_t dims[1]; // dataspace dim sizes
+  hid_t dataset, file_dataspace, mem_dataspace;
+  hid_t dataset_CRC, file_dataspace_CRC, mem_dataspace_CRC;
+  hsize_t start[1];			/* for hyperslab setting */
+  hsize_t hypercount[1], stride[1];	/* for hyperslab setting */
+  hsize_t sizedims[1];
+  uint64_t CRCv[9], CRC_loc;
+  hsize_t dim_size[1];
+  uint64_t read1_cs = 0;
+
+  hsize_t FileSize;
+  double mean=0;
+  double min;
+  double max;
+  double t1, timer;
+  double *rtimers=NULL;
+
+#if 0
+  std::vector<std::string> v;
+  v.push_back("/Variables/id");
+  v.push_back("/Variables/mask");
+  v.push_back("/Variables/phi");
+  v.push_back("/Variables/vx");
+  v.push_back("/Variables/vy");
+  v.push_back("/Variables/vz");
+  v.push_back("/Variables/x");
+  v.push_back("/Variables/y");
+  v.push_back("/Variables/z");
+#endif
+
+
+  GenericFileIO_HDF *gfio_hdf = dynamic_cast<GenericFileIO_HDF *> (FH.get());
+  fid = gfio_hdf->get_fileid();
+  //dims[0] = gfio_hdf->get_NumElem();
+  dims[0] = (hsize_t)NElems;
+
+  if(Rank == 0)  {
+    rtimers = (double *) malloc(commRanks*sizeof(double));
+  }
+
+  t1 =  MPI_Wtime();
+  start[0] =  Rank*dims[0];
+  if(Rank != commRanks-1) 
+      hypercount[0] = dims[0];
+  else 
+      hypercount[0] = TotElem - start[0]; 
+  stride[0] = 1;
+#ifdef HDF5_DERV
+
+  hid_t memtype;
+  dset = H5Dopen(fid, "/Variables/DATA", H5P_DEFAULT);
+  dtype = H5Dget_type(dset);
+  file_dataspace = H5Dget_space(dset);
+   
+   // For the simple read case, every rank except the last one will read the
+   // same number of elements. So the offset is simple to calculate. 
+   // For customized offsets, we should compute/assign them at the
+   // openAndReadHeader_HDF_Simple() and distribute them to all processes.
+
+#if 0
+   start[0] =  Rank*dims[0];
+   if(Rank != NRanks-1) 
+      hypercount[0] = dims[0];
+   else 
+      hypercount[0] = TotElem - start[0]; 
+   stride[0] = 1;
+#endif
+
+   //  cout << start[0] << endl;
+   //  cout <<  hypercount[0] << endl;
+
+   ret=H5Sselect_hyperslab(file_dataspace, H5S_SELECT_SET, start, stride,
+			   hypercount, NULL);
+
+   sizedims[0] = dims[0];
+
+   mem_dataspace = H5Screate_simple (1, sizedims, NULL);
+
+   Hdata = (hacc_t *) malloc (sizedims[0] * sizeof (hacc_t));
+   
+   if (!Hdata) cout << "NULLISH" << endl;
+
+   dxpl_id = H5Pcreate (H5P_DATASET_XFER);
+//     H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
+
+     //H5Pset_dxpl_checksum_ptr(dxpl_id, &read1_cs);
+
+   memtype = H5Tget_native_type(dtype, H5T_DIR_ASCEND);
+   
+   ret = H5Dread(dset, dtype, mem_dataspace, file_dataspace, dxpl_id, Hdata);
+
+   H5Pclose(dxpl_id);
+   ret = H5Sclose (mem_dataspace);
+   ret = H5Sclose (file_dataspace);
+   ret = H5Tclose (dtype);
+   ret = H5Dclose (dset);
+   free(Hdata);
+   timer = MPI_Wtime()-t1;
+
+#if 0
+   if(Rank == 0) {
+     for(size_t j = 0; j < dims[0]; ++j) {
+       cout << j << " " << Hdata[j].id << endl;
+     }
+   }
+#endif
+
+
+#else
+
+   // Need to build a map between Var name(relative name) later.
+   // Now just assume the variable name is consistent.
+   // If it is not, H5Dopen will fail.
+
+   for (size_t i = 0; i < Vars.size(); ++i) {
+
+     string var_abo_path = "/Variables/"+Vars[i].Name;
+
+     dset = H5Dopen(fid, var_abo_path.c_str(), H5P_DEFAULT);
+
+     dtype = H5Dget_type(dset);
+
+     file_dataspace = H5Dget_space (dset);
+
+     //H5Sget_simple_extent_dims(file_dataspace, dim_size, NULL);
+
+     ret=H5Sselect_hyperslab(file_dataspace, H5S_SELECT_SET, start, stride,
+ 	    hypercount, NULL);
+
+     sizedims[0] = dims[0];
+
+     mem_dataspace = H5Screate_simple (1, sizedims, NULL);
+
+     //void *Data = Vars[i].Data;
+     //if (!Data) cout << "NULLISH" << endl;
+
+     dxpl_id = H5Pcreate (H5P_DATASET_XFER);
+     // H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
+     //H5Pset_dxpl_checksum_ptr(dxpl_id, &read1_cs);
+
+     size_t Vsize;
+
+     //   if(Rank==0) printf("Reading Dataset  %s \n",c_str);
+     hid_t memtype = H5Tget_native_type(dtype,H5T_DIR_ASCEND);
+     size_t memtype_size = H5Tget_size(memtype);
+     vector <char>Data;
+     Data.resize(memtype_size*dims[0]);
+#if 0
+     if( Vars[i].Name.compare("id") == 0){ 
+       Data.resize(mem*dims[0]);
+     }
+     else if( Vars[i].Name.compare("mask") == 0){ 
+       memtype = H5T_NATIVE_UINT16;
+
+       Data.resize(2*dims[0]);
+       //Data = new unsigned short [dims[0]];
+     }
+     else {  
+       memtype = H5T_NATIVE_FLOAT;
+       Data = new float [dims[0]];
+     }
+#endif
+     
+     ret = H5Dread(dset, memtype, mem_dataspace, file_dataspace, dxpl_id, (void*)&Data[0]);
+
+#if 0
+     if(Rank == 4) {
+    if(Vars[i].Name.compare("/Variables/id") == 0) {
+      for(size_t j = 0; j < dims[0]; ++j){
+	cout << j << " " << ((size_t *)Data)[j] << endl;
+      }
+    }
+     }
+#endif
+    
+     H5Pclose(dxpl_id);
+     ret = H5Sclose (mem_dataspace);
+     ret = H5Sclose (file_dataspace);
+     ret = H5Dclose (dset);
+
+   }
+   
+#endif
+   timer = MPI_Wtime()-t1;
+   MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+   if(Rank == 0)  {
+     
+     min = rtimers[0];
+     max = min;
+     mean = min;
+     for(int n = 1; n < commRanks; n++) {
+       mean += rtimers[n];
+       if(rtimers[n] > max)
+	       max=rtimers[n];
+       if(rtimers[n] < min)
+	       min=rtimers[n];
+     }
+     free(rtimers);
+
+    // Obtain file size, this is just for benchmarking purpose.We can set the file size to genericIO if necessary.
+    hid_t fid = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
+    if(fid <0)
+        throw runtime_error( ("Unable to open the file: ") + FileName);
+    hsize_t h5_filesize=0;
+    if(H5Fget_filesize(fid,&h5_filesize)<0) {
+        H5Fclose(fid);
+        throw runtime_error( ("Unable to obtain the HDF5 file size: ") + FileName);
+    }
+    H5Fclose(fid);
+    printf("%d READ DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", commRanks, mean/commRanks, min, max,
+	   (double)h5_filesize/(mean/commRanks) / (1024.*1024.), 
+	   (double)h5_filesize/min/(1024.*1024.), (double)h5_filesize/max/(1024.*1024.) );
+  }  
+}
+#endif
+
+
 void GenericIO::readData(int EffRank, size_t RowOffset, int Rank,
                          uint64_t &TotalReadSize, int NErrs[3]) {
   if (FH.isBigEndian())
@@ -3485,6 +3833,7 @@ void GenericIO::readData(int EffRank, size_t RowOffset, int Rank,
   openAndReadHeader(Redistributing ? MismatchRedistribute : MismatchAllowed,
                     EffRank, false);
 
+cerr<<"coming to read data "<< "Rank is " << Rank <<endl;
   assert(FH.getHeaderCache().size() && "HeaderCache must not be empty");
 
   if (EffRank == -1)
@@ -3701,6 +4050,7 @@ void GenericIO::readData(int EffRank, size_t RowOffset, int Rank,
   }
 #endif
 
+cerr<<"before blosc decompression "<<endl;
         blosc_decompress(&LData[0] + sizeof(CompressHeader<IsBigEndian>),
                          VarData, Vars[i].Size*RH->NElems);
 

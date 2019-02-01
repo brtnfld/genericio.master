@@ -117,7 +117,7 @@ public:
   virtual ~GenericFileIO_HDF();
   hid_t get_fileid(void);
   size_t get_NumElem(void);
-  uint64_t get_TotElem(void);
+  //uint64_t get_TotElem(void);
   virtual void open(const std::string &FN, bool ForReading = false);
   virtual void setSize(size_t sz);
   virtual void read(void *buf, size_t count, off_t offset, const std::string &D);
@@ -129,6 +129,7 @@ protected:
   hid_t h1;
   hid_t FH;
   size_t NumElem;
+  //uint64_t TotalElem;
   MPI_Comm Comm;
 };
 
@@ -386,6 +387,7 @@ public:
   }
 
 
+
   template <typename T>
   void addVariable(const std::string &Name, T *Data,
                    unsigned Flags = 0) {
@@ -441,6 +443,7 @@ public:
 
   void openAndReadHeader_HDF(size_t *Numel, bool MustMatch = true, int EffRank = -1,
                          bool CheckPartMap = true);
+  void openAndReadHeader_HDF_Simple();
 
   int readNRanks();
   void readDims(int Dims[3]);
@@ -463,6 +466,7 @@ public:
 
   void readData(int EffRank = -1, bool PrintStats = true, bool CollStats = true);
   void readDataHDF(int EffRank = -1, bool PrintStats = true, bool CollStats = true);
+  void readDataHDF_Simple();
 
   void getSourceRanks(std::vector<int> &SR);
 
@@ -551,6 +555,7 @@ protected:
   double PhysOrigin[3], PhysScale[3];
 
   uint64_t TotElem;
+
 
   unsigned FileIOType;
   int Partition;
