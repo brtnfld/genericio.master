@@ -80,7 +80,7 @@ H5D_rw_multi_t multi_info[9];
 #endif
 
 // COMPOUND TYPE METHOD
-//#define HDF5_DERV
+#define HDF5_DERV
 #ifdef HDF5_DERV
 typedef struct {
   int64_t id;
@@ -2444,23 +2444,36 @@ void GenericIO::openAndReadHeader_HDF_Simple() {
   NRanks = 1;
 #endif
 
+// The following code doesn't make much sense to me to put it here.
+// Just follow the origianl openAndReadHeader.
+// Doesn't make sense. Still comment out.
+#if 0
+#ifndef GENERICIO_NO_MPI
+  GenericIO GIO(MPI_COMM_SELF, FileName, FileIOType);
+#ifdef GENERICIO_HAVE_HDF
+  FH.get() = new GenericFileIO_HDF(MPI_COMM_SELF);
+#endif
+#else
+  GenericIO GIO(FileName, FileIOType);
+#endif
+  FH.get()->open(FileName, true);
+#endif
+
 //The following code makes each process to open the file independently.
 //For us, we just need to use one process to open the HDF5 file to
 //obtain the total number of elements and chunk size. So we just open
 //the HDF5 file, peek the information and close it. 
 
   uint64_t num_elems_array[2]; 
-  uint64_t recv_num_elems_array[2];
 #ifndef GENERICIO_NO_MPI
 #ifdef GENERICIO_HAVE_HDF
   if(Rank == 0) {
     hid_t h5file_id = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
     if(h5file_id <0)
         throw runtime_error( ("Unable to open the file: ") + FileName);
-
-    // The 
     hid_t h5dset_id  = -1;
     string dsetname;
+
     // We can do more to find the fit variable name. Here just make it simple and fast.
 #ifdef HDF5_DERV 
     dsetname = "/Variables/DATA";
@@ -2478,7 +2491,6 @@ void GenericIO::openAndReadHeader_HDF_Simple() {
     hssize_t h5dset_nelems = H5Sget_simple_extent_npoints(h5dspace_id);
 
     // We can add the retrieval of chunking information later. 
-    
     H5Sclose(h5dspace_id);
     H5Dclose(h5dset_id);
     H5Fclose(h5file_id);
@@ -2488,38 +2500,22 @@ void GenericIO::openAndReadHeader_HDF_Simple() {
 
     // Without optimization, just make the number of elements evenly 
     // distributed among processes.
-    num_elems_array[1] = (h5dset_nelems/NRanks);
+    num_elems_array[1] = (h5dset_nelems/NRanks)+1;
     setTotElem(num_elems_array[0]);
     if((uint64_t)(size_t)num_elems_array[1]!=num_elems_array[1])
         throw runtime_error( "The datatype size_t causes the overflow for number of elements per process. ");
-    setNumElems((size_t)num_elems_array[1]);
-
-    //uint64_t num_elems_last = h5dset_nelems -(NRanks-1)*num_elems_0;
-    //MPI_Send(&num_elems_last,1,MPI_UINT64_T,NRank-1,1,Comm);
+    setNumElems_mine((size_t)num_elems_array[1]);
   }
-  MPI_Scatter( num_elems_array, 2, MPI_UINT64_T, recv_num_elems_array, 2, MPI_UINT64_T, 0, Comm);
+  MPI_Bcast( num_elems_array, 2, MPI_UINT64_T, 0, Comm);
 
   if(Rank !=0) {
-    setTotElem(recv_num_elems_array[0]);
-    if((uint64_t)(size_t)recv_num_elems_array[1]!=recv_num_elems_array[1])
+    setTotElem(num_elems_array[0]);
+    if((uint64_t)(size_t)num_elems_array[1]!=num_elems_array[1])
         throw runtime_error( "The datatype size_t causes the overflow for number of elements per process. ");
-    setNumElems((size_t)recv_num_elems_array[1]);
-
-  }
-#if 0
-  if(Rank == (NRanks-1)) {
-    uint64_t num_elems_last = 0;
-    MPI_Recv(&num_elems_last,1,MPI_UINT64_T,1,1,Comm);
-    setNumElems((size_t)num_elems_last);
-  }
-  else {
-    setNumElems((size_t)num_elems);
+    setNumElems_mine((size_t)num_elems_array[1]);
   }
 #endif
-#endif
 
-
-  
 #if 0
 #ifndef GENERICIO_NO_MPI
   GenericIO GIO(MPI_COMM_SELF, FileName, FileIOType);
@@ -2538,8 +2534,7 @@ void GenericIO::openAndReadHeader_HDF_Simple() {
 #endif
 #endif
 
-
-
+  return;
 }
 
   void GenericIO::openAndReadHeader_HDF(size_t *Numel, bool MustMatch, int EffRank, bool CheckPartMap) {
@@ -2552,8 +2547,6 @@ void GenericIO::openAndReadHeader_HDF_Simple() {
   NRanks = 1;
 #endif
 
-  //  cout << "openAndReadHeader_HDF" << endl;
-
 #ifndef GENERICIO_NO_MPI
   GenericIO GIO(MPI_COMM_SELF, FileName, FileIOType);
 #ifdef GENERICIO_HAVE_HDF 
@@ -2568,7 +2561,6 @@ void GenericIO::openAndReadHeader_HDF_Simple() {
   GenericFileIO_HDF *gfio_hdf = dynamic_cast<GenericFileIO_HDF *> (FH.get());
   *Numel = gfio_hdf->get_NumElem();
 #endif
-
 
   return;
 }
@@ -3236,7 +3228,7 @@ cerr<<"No Redistributing "<<endl;
    if (!Hdata) cout << "NULLISH" << endl;
 
    dxpl_id = H5Pcreate (H5P_DATASET_XFER);
-//     H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
+     H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
 
      //H5Pset_dxpl_checksum_ptr(dxpl_id, &read1_cs);
 
@@ -3598,7 +3590,7 @@ cerr<<"No Redistributing "<<endl;
 
   hid_t dset, dset_id, space, aspace;
   hid_t dset_CRC;
-  hid_t fid, dtype,dxpl_id;
+  hid_t fid, fapl_id,dtype,dxpl_id;
   herr_t ret;
   hsize_t dims[1]; // dataspace dim sizes
   hid_t dataset, file_dataspace, mem_dataspace;
@@ -3630,9 +3622,20 @@ cerr<<"No Redistributing "<<endl;
   v.push_back("/Variables/z");
 #endif
 
-
+//cerr<<"coming to read HDF simple "<<endl;
+  fapl_id = H5Pcreate (H5P_FILE_ACCESS);
+  //ret = H5Pset_fapl_mpiposix(fapl_id, Comm, 0); 
+  
+#ifndef GENERICIO_NO_MPI
+  ret = H5Pset_fapl_mpio(fapl_id, Comm, MPI_INFO_NULL);
+#endif
+  if( (fid = H5Fopen(const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,fapl_id)) < 0)
+      throw runtime_error( ("Unable to open the file: ") + FileName);
+  H5Pclose(fapl_id);
+#if 0
   GenericFileIO_HDF *gfio_hdf = dynamic_cast<GenericFileIO_HDF *> (FH.get());
   fid = gfio_hdf->get_fileid();
+#endif
   //dims[0] = gfio_hdf->get_NumElem();
   dims[0] = (hsize_t)NElems;
 
@@ -3647,6 +3650,7 @@ cerr<<"No Redistributing "<<endl;
   else 
       hypercount[0] = TotElem - start[0]; 
   stride[0] = 1;
+
 #ifdef HDF5_DERV
 
   hid_t memtype;
@@ -3674,7 +3678,11 @@ cerr<<"No Redistributing "<<endl;
    ret=H5Sselect_hyperslab(file_dataspace, H5S_SELECT_SET, start, stride,
 			   hypercount, NULL);
 
-   sizedims[0] = dims[0];
+   if(Rank != commRanks-1)
+     sizedims[0] = dims[0];
+   else
+     sizedims[0] = TotElem - Rank*dims[0];
+
 
    mem_dataspace = H5Screate_simple (1, sizedims, NULL);
 
@@ -3685,27 +3693,27 @@ cerr<<"No Redistributing "<<endl;
    dxpl_id = H5Pcreate (H5P_DATASET_XFER);
 //     H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
 
-     //H5Pset_dxpl_checksum_ptr(dxpl_id, &read1_cs);
-
    memtype = H5Tget_native_type(dtype, H5T_DIR_ASCEND);
-   
-   ret = H5Dread(dset, dtype, mem_dataspace, file_dataspace, dxpl_id, Hdata);
+
+   //ret = H5Dread(dset, dtype, mem_dataspace, file_dataspace, dxpl_id, Hdata);
+   ret = H5Dread(dset, memtype, mem_dataspace, file_dataspace, dxpl_id, Hdata);
 
    H5Pclose(dxpl_id);
    ret = H5Sclose (mem_dataspace);
    ret = H5Sclose (file_dataspace);
+   ret = H5Tclose (memtype);
    ret = H5Tclose (dtype);
    ret = H5Dclose (dset);
-   free(Hdata);
    timer = MPI_Wtime()-t1;
 
 #if 0
    if(Rank == 0) {
-     for(size_t j = 0; j < dims[0]; ++j) {
+     for(size_t j = 0; j < sizedims[0]; ++j) {
        cout << j << " " << Hdata[j].id << endl;
      }
    }
 #endif
+   free(Hdata);
 
 
 #else
@@ -3717,6 +3725,7 @@ cerr<<"No Redistributing "<<endl;
    for (size_t i = 0; i < Vars.size(); ++i) {
 
      string var_abo_path = "/Variables/"+Vars[i].Name;
+//cerr<<"var path is "<<var_abo_path <<endl;
 
      dset = H5Dopen(fid, var_abo_path.c_str(), H5P_DEFAULT);
 
@@ -3729,24 +3738,25 @@ cerr<<"No Redistributing "<<endl;
      ret=H5Sselect_hyperslab(file_dataspace, H5S_SELECT_SET, start, stride,
  	    hypercount, NULL);
 
-     sizedims[0] = dims[0];
+     if(Rank != commRanks-1)
+       sizedims[0] = dims[0];
+     else
+       sizedims[0] = TotElem - Rank*dims[0];
 
      mem_dataspace = H5Screate_simple (1, sizedims, NULL);
 
-     //void *Data = Vars[i].Data;
-     //if (!Data) cout << "NULLISH" << endl;
 
      dxpl_id = H5Pcreate (H5P_DATASET_XFER);
      // H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
      //H5Pset_dxpl_checksum_ptr(dxpl_id, &read1_cs);
 
-     size_t Vsize;
+     //size_t Vsize;
 
      //   if(Rank==0) printf("Reading Dataset  %s \n",c_str);
      hid_t memtype = H5Tget_native_type(dtype,H5T_DIR_ASCEND);
      size_t memtype_size = H5Tget_size(memtype);
      vector <char>Data;
-     Data.resize(memtype_size*dims[0]);
+     Data.resize(memtype_size*sizedims[0]);
 #if 0
      if( Vars[i].Name.compare("id") == 0){ 
        Data.resize(mem*dims[0]);
@@ -3766,23 +3776,36 @@ cerr<<"No Redistributing "<<endl;
      ret = H5Dread(dset, memtype, mem_dataspace, file_dataspace, dxpl_id, (void*)&Data[0]);
 
 #if 0
-     if(Rank == 4) {
-    if(Vars[i].Name.compare("/Variables/id") == 0) {
+     if(Rank == 2) {
+cerr<<"Rank = "<<Rank <<endl;
+    if(Vars[i].Name.compare("id") == 0) {
       for(size_t j = 0; j < dims[0]; ++j){
-	cout << j << " " << ((size_t *)Data)[j] << endl;
+	    cout << j << " " << *((long *)&Data[0]+j) << endl;
       }
     }
      }
+
+//#if 0
+     else if(Rank == 3) {
+cerr<<"Rank = "<<Rank <<endl;
+    if(Vars[i].Name.compare("id") == 0) {
+      for(size_t j = 0; j < sizedims[0]; ++j){
+	    cout << j << " " << *((long *)&Data[0]+j) << endl;
+      }
+    }
+     }
+
 #endif
     
      H5Pclose(dxpl_id);
      ret = H5Sclose (mem_dataspace);
      ret = H5Sclose (file_dataspace);
      ret = H5Dclose (dset);
-
    }
    
 #endif
+   ret = H5Fclose(fid);
+
    timer = MPI_Wtime()-t1;
    MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
    if(Rank == 0)  {

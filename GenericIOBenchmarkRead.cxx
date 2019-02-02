@@ -110,8 +110,10 @@ int main(int argc, char *argv[]) {
     if (EnvStr2 && string(EnvStr2) == "1") {
         HDF_Simple_read = true;
         GIO.openAndReadHeader_HDF_Simple();
+//cerr<<"after readheader "<<endl;
         MPI_Barrier(MPI_COMM_WORLD);
-        Np = GIO.readNumElems();
+        Np = GIO.readNumElems_mine();
+//cerr<<"Np is "<<Np <<endl;
     }
     else
         GIO.openAndReadHeader_HDF(&Np,false, 0, false);
@@ -121,8 +123,8 @@ int main(int argc, char *argv[]) {
     GIO.openAndReadHeader(GenericIO::MismatchRedistribute);
     MPI_Barrier(MPI_COMM_WORLD);
     Np = GIO.readNumElems();
-if(commRank == 0)
-    cerr<<"Np in MPI-IO module is "<<Np <<endl;
+//if(commRank == 0)
+//    cerr<<"Np in MPI-IO module is "<<Np <<endl;
 #ifdef GENERICIO_HAVE_HDF
   }
 #endif
@@ -142,8 +144,8 @@ if(commRank == 0)
   }
   id.resize(Np + GIO.requestedExtraSpace()/sizeof(ID_T));
   mask.resize(Np + GIO.requestedExtraSpace()/sizeof(MASK_T));
-if(commRank == 0)
-   cerr<<"allocated space for a variable is "<<Np + GIO.requestedExtraSpace()/sizeof(MASK_T)<<endl;
+//if(commRank == 0)
+//   cerr<<"allocated space for a variable is "<<Np + GIO.requestedExtraSpace()/sizeof(MASK_T)<<endl;
   if (UseAOS) {
     GIO.addVariable("pos", pos, GenericIO::VarHasExtraSpace);
     GIO.addVariable("vel", vel, GenericIO::VarHasExtraSpace);
@@ -162,7 +164,7 @@ if(commRank == 0)
   
 #ifdef GENERICIO_HAVE_HDF
   if (Method == GenericIO::FileIOHDF) {
-    // cout << "GIO.readDataHDF" << endl;
+    //cout << "GIO.readDataHDF" << endl;
     if(true == HDF_Simple_read) 
         GIO.readDataHDF_Simple();
     else 

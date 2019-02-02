@@ -355,6 +355,9 @@ public:
     return 8;
   }
 
+  void setNumElems_mine(std::size_t E) {
+    NElems = E;
+  }
   void setNumElems(std::size_t E) {
     NElems = E;
 
@@ -461,6 +464,7 @@ public:
   void getVariableInfo(std::vector<VariableInfo> &VI);
 
   std::size_t readNumElems(int EffRank = -1);
+  std::size_t readNumElems_mine() {return NElems; }
   void readCoords(int Coords[3], int EffRank = -1);
   int readGlobalRankNumber(int EffRank = -1);
 
