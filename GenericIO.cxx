@@ -74,6 +74,7 @@ extern "C" {
 #endif
 
 #define HDF5_COMPRESSION
+#define HDF5_COMPRESSION_INDIVIDUAL_IO
 //#define HDF5_HAVE_MULTI_DATASETS
 #ifdef HDF5_HAVE_MULTI_DATASETS
 H5D_rw_multi_t multi_info[9];
@@ -478,7 +479,10 @@ void GenericFileIO_HDF::write_hdf_internal(const void *buf, size_t count, uint64
   hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
 
 #ifdef HDF5_COMPRESSION
- H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+  H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+#ifdef HDF5_COMPRESSION_INDIVIDUAL_IO
+  H5Pset_dxpl_mpio_collective_opt(plist_id,H5FD_MPIO_INDIVIDUAL_IO);
+#endif
 #endif
   // write data
   t1 = MPI_Wtime();
@@ -1097,6 +1101,9 @@ void GenericIO::write_hdf() {
     plist_id = H5Pcreate(H5P_DATASET_XFER);
 #ifdef HDF5_COMPRESSION
     H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+#ifdef HDF5_COMPRESSION_INDIVIDUAL_IO
+  H5Pset_dxpl_mpio_collective_opt(plist_id,H5FD_MPIO_INDIVIDUAL_IO);
+#endif
 #endif
 
     t1 = MPI_Wtime();
