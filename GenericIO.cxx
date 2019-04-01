@@ -73,7 +73,7 @@ extern "C" {
 #define MPI_UINT64_T (sizeof(long) == 8 ? MPI_LONG : MPI_LONG_LONG)
 #endif
 
-#define HDF5_COMPRESSION
+//#define HDF5_COMPRESSION
 //#define HDF5_HAVE_MULTI_DATASETS
 #ifdef HDF5_HAVE_MULTI_DATASETS
 H5D_rw_multi_t multi_info[9];
