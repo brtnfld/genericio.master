@@ -265,7 +265,8 @@ size_t GenericFileIO_HDF::get_NumElem() {
   H5Pset_all_coll_metadata_ops(fapl_id, 1);
   H5Pset_libver_bounds(fapl_id, H5F_LIBVER_LATEST, H5F_LIBVER_LATEST);
   H5Pset_fclose_degree(fapl_id,H5F_CLOSE_WEAK);
-  fcpl_id = H5Pcreate(H5P_FILE_CREATE);  
+  fcpl_id = H5Pcreate(H5P_FILE_CREATE);
+  H5Pset_file_space_strategy(fcpl_id, H5F_FSPACE_STRATEGY_FSM_AGGR, 1, (hsize_t)1);
 //  H5Pset_file_space_strategy(fcpl_id,H5F_FSPACE_STRATEGY_PAGE,0,(hsize_t)1);
 //  H5Pset_file_space_page_size(fcpl_id, (hsize_t)(2*1048576));
 #if 0 
