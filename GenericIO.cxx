@@ -80,7 +80,7 @@ H5D_rw_multi_t multi_info[9];
 #endif
 
 // COMPOUND TYPE METHOD
-//#define HDF5_DERV
+#define HDF5_DERV
 #ifdef HDF5_DERV
 typedef struct {
   int64_t id;
