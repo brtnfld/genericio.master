@@ -192,8 +192,10 @@ void GenericFileIO_MPICollective::write(const void *buf, size_t count, off_t off
     if (MPI_File_write_at_all(FH, offset, (void *) buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
       throw runtime_error("Unable to write " + D + " to file: " + FileName);
 
-    int scount;
-    (void) MPI_Get_count(&status, MPI_BYTE, &scount);
+    int scount = 0;
+    // On some systems, MPI_Get_count will not return zero even when count is zero.
+    if (count > 0)
+      (void) MPI_Get_count(&status, MPI_BYTE, &scount);
 
     count -= scount;
     buf = ((char *) buf) + scount;
