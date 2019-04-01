@@ -73,13 +73,14 @@ extern "C" {
 #define MPI_UINT64_T (sizeof(long) == 8 ? MPI_LONG : MPI_LONG_LONG)
 #endif
 
+#define HDF5_COMPRESSION
 //#define HDF5_HAVE_MULTI_DATASETS
 #ifdef HDF5_HAVE_MULTI_DATASETS
 H5D_rw_multi_t multi_info[9];
 #endif
 
 // COMPOUND TYPE METHOD
-#define HDF5_DERV
+//#define HDF5_DERV
 #ifdef HDF5_DERV
 typedef struct {
   int64_t id;
@@ -396,7 +397,7 @@ void GenericFileIO_HDF::write(const void *buf, size_t count, off_t offset,
 }
 
 void GenericFileIO_HDF::write_hdf_internal(const void *buf, size_t count, uint64_t offset,
-				  const std::string &D, hid_t dtype, hsize_t numel, const void *CRC, hid_t gid, uint64_t Totnumel, size_t i) {
+				  const std::string &D, hid_t dtype, hsize_t numel, hsize_t chunk_size,const void *CRC, hid_t gid, uint64_t Totnumel, size_t i) {
 
   hid_t sid, dataset,file_dataspace, aid, mem_dataspace, attr, fid, aspace;
   
@@ -434,8 +435,24 @@ void GenericFileIO_HDF::write_hdf_internal(const void *buf, size_t count, uint64
 
 #ifndef HDF5_HAVE_MULTI_DATASETS
 
+#ifdef HDF5_COMPRESSION
+  hid_t dset_creation_plist;
+  hsize_t chunk_dims1[1];
+  chunk_dims1[0] = chunk_size; 
+  dset_creation_plist = H5Pcreate(H5P_DATASET_CREATE);
+
+  H5Pset_chunk(dset_creation_plist,1,chunk_dims1);
+
+  H5Pset_deflate(dset_creation_plist,6);
+ 
+  if( (dataset = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, dset_creation_plist, H5P_DEFAULT)) < 0)
+    throw runtime_error( "Unable to create HDF5 dataset " );
+  H5Pclose(dset_creation_plist);
+
+#else  
   if( (dataset = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT)) < 0)
     throw runtime_error( "Unable to create HDF5 dataset " );
+#endif
 
   delete[] c_str;
 
@@ -461,7 +478,10 @@ void GenericFileIO_HDF::write_hdf_internal(const void *buf, size_t count, uint64
   mem_dataspace = H5Screate_simple (1, hypercount, NULL);
 
   hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
-//  H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+
+#ifdef HDF5_COMPRESSION
+ H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+#endif
   // write data
   t1 = MPI_Wtime();
 
@@ -816,6 +836,7 @@ void GenericIO::write_hdf() {
   char notes[] = {"Important notes go here"};
 
   uint64_t FileSize = 0;
+  hsize_t chunk_size = 0;
 
   int NRanks, Rank;
   MPI_Comm_rank(Comm, &Rank);
@@ -878,6 +899,14 @@ void GenericIO::write_hdf() {
     ret = H5Gclose (gid);
     
     gid = H5Gopen2(fid, "Variables", H5P_DEFAULT);
+
+#ifdef HDF5_COMPRESSION
+    uint64_t max_nelms = 0;
+    MPI_Allreduce(&NElems, &max_nelms, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+    //assert(((uint64_t)((size_t)(max_nelms)) == max_nelms);
+    chunk_size = (hsize_t)max_nelms;
+
+#endif
   } // Can remove this line later
 
 
@@ -1017,7 +1046,7 @@ void GenericIO::write_hdf() {
 	    dtype = H5T_NATIVE_FLOAT;
 	  }
 	
-	  gfio_hdf->write_hdf_internal(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem, i);
+	  gfio_hdf->write_hdf_internal(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, chunk_size,&CRC, gid, TotElem, i);
 #endif
     }
   }
@@ -1036,7 +1065,25 @@ void GenericIO::write_hdf() {
     /*
      * Create the dataset and write the compound data to it.
      */
+#ifdef HDF5_COMPRESSION
+  hid_t dset_creation_plist;
+  hsize_t chunk_dims1[1];
+  chunk_dims1[0] = chunk_size; 
+  dset_creation_plist = H5Pcreate(H5P_DATASET_CREATE);
+
+  H5Pset_chunk(dset_creation_plist,1,chunk_dims1);
+
+  H5Pset_deflate(dset_creation_plist,6);
+ 
+  //if( (dataset = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, dset_creation_plist, H5P_DEFAULT)) < 0)
+  if((dset = H5Dcreate (gid, "DATA", Hmemtype, filespace, H5P_DEFAULT, dset_creation_plist, H5P_DEFAULT))<0)
+     throw runtime_error( "Unable to create HDF5 dataset " );
+  H5Pclose(dset_creation_plist);
+
+
+#else
     dset = H5Dcreate (gid, "DATA", Hmemtype, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+#endif
 
     hsize_t count[1];	          /* hyperslab selection parameters */
     hsize_t offset[1];
@@ -1045,11 +1092,14 @@ void GenericIO::write_hdf() {
     memspace = H5Screate_simple(1, count, NULL);
 
     offset[0] = Offsets_glb;
+//cerr<<"mpi_rank is "<<Rank <<" count: "<<count[0] <<"offset "<<offset[0]<<endl;
 
     H5Sselect_hyperslab(filespace, H5S_SELECT_SET, offset, NULL, count, NULL);
 
     plist_id = H5Pcreate(H5P_DATASET_XFER);
-    //    H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+#ifdef HDF5_COMPRESSION
+    H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+#endif
 
     t1 = MPI_Wtime();
     status = H5Dwrite (dset, Hmemtype, memspace, filespace, plist_id, Hdata);
@@ -1158,7 +1208,7 @@ void GenericIO::write_hdf() {
     hsize_t h5_filesize=0;
     if(H5Fget_filesize(fid,&h5_filesize)<0) {
         H5Fclose(fid);
-        throw runtime_error( ("Unable to the HDF5 file size: ") + FileName);
+        throw runtime_error( ("Unable to obtain the HDF5 file size: ") + FileName);
     }
     H5Fclose(fid);
 #if defined(HDF5_DERV) || defined(HDF5_HAVE_MULTI_DATASETS)        
@@ -1183,7 +1233,7 @@ void GenericIO::write_hdf() {
 template <bool IsBigEndian>
 void GenericIO::write() {
 
-cerr<<"coming to write "<<endl;
+//cerr<<"coming to write "<<endl;
  bool use_hdf5 = false;
  const char *EnvStr1 = getenv("GENERICIO_USE_HDF");
  if (EnvStr1 && string(EnvStr1) == "1"){
@@ -1195,7 +1245,7 @@ cerr<<"coming to write "<<endl;
   write_hdf();
 //#else 
  else {
-cerr<<"coming to mpiio "<<endl;
+//cerr<<"coming to mpiio "<<endl;
   const char *Magic = IsBigEndian ? MagicBE : MagicLE;
 
   uint64_t FileSize = 0;
@@ -1506,7 +1556,7 @@ nocomp:
     FH.get() = new GenericFileIO_POSIX();
 
   FH.get()->open(LocalFileName);
-cerr<<"before writing data "<<endl;
+//cerr<<"before writing data "<<endl;
 
   uint64_t Offset = RHLocal.Start;
   for (size_t i = 0; i < Vars.size(); ++i) {
@@ -1529,7 +1579,7 @@ cerr<<"before writing data "<<endl;
     crc64_invert(CRC, CRCLoc);
 
     if (HasExtraSpace) {
-cerr<<"writing data "<<endl;
+//cerr<<"writing data "<<endl;
       FH.get()->write(Data, WriteSize + CRCSize, Offset, Vars[i].Name + " with CRC");
     } else {
       FH.get()->write(Data, WriteSize, Offset, Vars[i].Name);
@@ -1975,6 +2025,8 @@ nocomp:
     ret = H5Gclose (gid);
     
     gid = H5Gopen2(fid, "Variables", H5P_DEFAULT);
+
+
   }
 #endif
 
