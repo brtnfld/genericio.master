@@ -78,8 +78,13 @@ extern "C" {
 H5D_rw_multi_t multi_info[9];
 #endif
 
+char red[] = { 0x1b, '[', '1', ';', '3', '1', 'm', 0 };
+char green[] = { 0x1b, '[', '1', ';', '3', '2', 'm', 0 };
+char nc[] = { 0x1b, '[', '0', ';', '3', '9', 'm', 0 };
+
 // COMPOUND TYPE METHOD
-#define HDF5_DERV
+#ifdef GENERICIO_HAVE_HDF
+//#define HDF5_DERV
 #ifdef HDF5_DERV
 typedef struct {
   int64_t id;
@@ -97,6 +102,13 @@ hid_t Hmemtype;
 hid_t Hfiletype;
 
 uint64_t CRC_values[9];
+char FORMAT_TYPE[] = "HDF5_DERV";
+#else
+char FORMAT_TYPE[] = "HDF5";
+#endif
+
+#else
+char FORMAT_TYPE[] = "MPI IO";
 
 #endif
 
@@ -1497,7 +1509,7 @@ nocomp:
   }
 
   if (Rank == 0) {
-    printf("WRITE DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", mean/NRanks, min, max,
+    printf("%s WRITE DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", FORMAT_TYPE, mean/NRanks, min, max,
 	   (double)FileSize/(mean/NRanks) / (1024.*1024.), 
 	   (double)FileSize/min/(1024.*1024.), (double)FileSize/max/(1024.*1024.) );
     double Rate = ((double) FileSize) / MaxTotalTime / (1024.*1024.);
@@ -2397,9 +2409,9 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
        }
        cout << "Checking CRC for Dataset " << ii ;
        if (CRCv[ii] != CRC_sum || CRC_sum == 0) {
-	 cout << " CRC error " << CRCv[ii] << " " << CRC_sum << endl;
+	 cout << red <<  " CRC FAILED " << nc << CRCv[ii] << " " << CRC_sum << endl;
        } else {
-	 cout << " PASSED" << endl;
+	 cout << green << " PASSED" << nc << endl;
        }
      }
    }
@@ -2423,8 +2435,8 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
      free(rtimers);
    }
   if (Rank == 0) {
-    cout << FileSize << endl;
-    printf("%d READ DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", commRanks, mean/commRanks, min, max,
+    //  cout << FileSize << endl;
+    printf("%d %s READ DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", commRanks, FORMAT_TYPE, mean/commRanks, min, max,
 	   (double)FileSize/(mean/commRanks) / (1024.*1024.), 
 	   (double)FileSize/min/(1024.*1024.), (double)FileSize/max/(1024.*1024.) );
   }
@@ -2545,8 +2557,9 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
      //    if(Rank==0) printf("Reading in CRC for Dataset %s \n",c_str3);
 
       //  cout << "2H5Dread" << ret << endl;
-#if 0
-      attr_id = H5Dopen(fid, c_str3, H5P_DEFAULT);
+
+#if 1
+      hid_t attr_id = H5Dopen(fid, c_str3, H5P_DEFAULT);
       file_dataspace_CRC = H5Dget_space(attr_id);
 
       ret = H5Dread(attr_id, H5T_NATIVE_ULONG, mem_dataspace_CRC, file_dataspace_CRC, H5P_DEFAULT, &CRCv);
@@ -2583,10 +2596,10 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
 	  CRC_sum = crc64_combine(CRC_sum, rbufv[k].CRC64, rbufv[k].CRC64_size);
 	}
 	cout << "Checking CRC for Dataset " << c_str3 ;
-	if (CRCv != CRC_sum || CRC_sum == 0) {
-	  cout << " CRC error " << CRCv << " " << CRC_sum << endl;
+	if (CRCv[0] != CRC_sum || CRC_sum == 0) {
+	  cout << red << " CRC FAILED " << nc << CRCv[0] << " " << CRC_sum << endl;
 	} else {
-	  cout << " PASSED" << endl;
+	  cout << green << " PASSED" << nc << endl;
 	}
 	free(rbufv);
       }
