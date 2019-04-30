@@ -85,7 +85,7 @@ char nc[] = { 0x1b, '[', '0', ';', '3', '9', 'm', 0 };
 
 // COMPOUND TYPE METHOD
 #ifdef GENERICIO_HAVE_HDF
-//#define HDF5_DERV
+#define HDF5_DERV
 #ifdef HDF5_DERV
 typedef struct {
   int64_t id;
@@ -998,7 +998,7 @@ void GenericIO::write_hdf() {
 	    }
 	    delete rbufv;
 	    CRC = CRC_sum;
-	    //  cout << "CRC_sum" << CRC << endl;
+            // cout << "CRC_sum " << CRC << endl;
 	  } else
 	    CRC = 0;
 
@@ -1007,6 +1007,9 @@ void GenericIO::write_hdf() {
 	  MPI_Scatter( sbufv, 1, MPI_UINT64_T, &Offsets, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); 
 	  delete sbufv;
 	  MPI_Type_free(&mpi_crc_type);
+
+          //  cout << "CRC_sum2 " << CRC << endl;
+	  Offsets_glb = Offsets;
 
 #ifdef HDF5_DERV
 	  hsize_t ii;
@@ -1047,8 +1050,6 @@ void GenericIO::write_hdf() {
 	      Hdata[ii].phi = *((float *)Data + ii);
 	    CRC_values[8] = CRC;
 	  }
-	
-	  Offsets_glb = Offsets;
 
 #else
 	  if( Vars[i].Name.compare("id") == 0) {
@@ -1132,7 +1133,7 @@ void GenericIO::write_hdf() {
     H5Sset_extent_simple(file_dataspace, 1, crc_dim, NULL);
 
     hid_t dcpl = H5Pcreate (H5P_DATASET_CREATE);
-    status = H5Pset_layout (dcpl, H5D_COMPACT);
+    //    status = H5Pset_layout (dcpl, H5D_COMPACT);
 
     dataset = H5Dcreate2(gid, "CRC_id_mask_x_y_z_vx_vy_vz_phi", H5T_NATIVE_ULONG, file_dataspace,
     			 H5P_DEFAULT, dcpl, H5P_DEFAULT);
@@ -1224,11 +1225,11 @@ void GenericIO::write_hdf() {
         throw runtime_error( ("Unable to obtain the HDF5 file size: ") + FileName);
     }
     H5Fclose(fid);
-#if defined(HDF5_DERV) || defined(HDF5_HAVE_MULTI_DATASETS)        
-    printf("WRITE DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", mean/NRanks, min, max,
+    //#if defined(HDF5_DERV) || defined(HDF5_HAVE_MULTI_DATASETS)        
+    printf("%s WRITE DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", FORMAT_TYPE, mean/NRanks, min, max,
 	   (double)h5_filesize/(mean/NRanks) / (1024.*1024.), 
 	   (double)h5_filesize/min/(1024.*1024.), (double)h5_filesize/max/(1024.*1024.) );
-#endif
+    //#endif
 
     double Rate = ((double) h5_filesize) / MaxTotalTime / (1024.*1024.);
     cout << NRanks << " Procs Wrote " << Vars.size() << " variables to " << FileName <<
