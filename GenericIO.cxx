@@ -73,6 +73,7 @@ extern "C" {
 #define MPI_UINT64_T (sizeof(long) == 8 ? MPI_LONG : MPI_LONG_LONG)
 #endif
 
+//#define HDF5_COMPRESSION
 //#define HDF5_HAVE_MULTI_DATASETS
 #ifdef HDF5_HAVE_MULTI_DATASETS
 H5D_rw_multi_t multi_info[9];
@@ -204,8 +205,10 @@ void GenericFileIO_MPICollective::write(const void *buf, size_t count, off_t off
     if (MPI_File_write_at_all(FH, offset, (void *) buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
       throw runtime_error("Unable to write " + D + " to file: " + FileName);
 
-    int scount;
-    (void) MPI_Get_count(&status, MPI_BYTE, &scount);
+    int scount = 0;
+    // On some systems, MPI_Get_count will not return zero even when count is zero.
+    if (count > 0)
+      (void) MPI_Get_count(&status, MPI_BYTE, &scount);
 
     count -= scount;
     buf = ((char *) buf) + scount;
@@ -270,9 +273,12 @@ size_t GenericFileIO_HDF::get_NumElem() {
   fapl_id = H5Pcreate (H5P_FILE_ACCESS);
   //ret = H5Pset_fapl_mpiposix(fapl_id, Comm, 0); 
   ret = H5Pset_fapl_mpio(fapl_id, Comm, info);
+  H5Pset_coll_metadata_write(fapl_id, 1);
+  H5Pset_all_coll_metadata_ops(fapl_id, 1);
   H5Pset_libver_bounds(fapl_id, H5F_LIBVER_LATEST, H5F_LIBVER_LATEST);
   H5Pset_fclose_degree(fapl_id,H5F_CLOSE_WEAK);
-  fcpl_id = H5Pcreate(H5P_FILE_CREATE);  
+  fcpl_id = H5Pcreate(H5P_FILE_CREATE);
+  H5Pset_file_space_strategy(fcpl_id, H5F_FSPACE_STRATEGY_FSM_AGGR, 1, (hsize_t)1);
 //  H5Pset_file_space_strategy(fcpl_id,H5F_FSPACE_STRATEGY_PAGE,0,(hsize_t)1);
 //  H5Pset_file_space_page_size(fcpl_id, (hsize_t)(2*1048576));
 #if 0 
@@ -291,7 +297,6 @@ size_t GenericFileIO_HDF::get_NumElem() {
 #endif
   FileName = FN;
 
-  //  cout << "in open" << endl;
 
   if ( ForReading) {
     if( (fid = H5Fopen(const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,fapl_id)) < 0)
@@ -404,8 +409,8 @@ void GenericFileIO_HDF::write(const void *buf, size_t count, off_t offset,
 				   const std::string &D) {
 }
 
-void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset,
-				  const std::string &D, hid_t dtype, hsize_t numel, const void *CRC, hid_t gid, uint64_t Totnumel, size_t i) {
+void GenericFileIO_HDF::write_hdf_internal(const void *buf, size_t count, uint64_t offset,
+				  const std::string &D, hid_t dtype, hsize_t numel, hsize_t chunk_size,const void *CRC, hid_t gid, uint64_t Totnumel, size_t i) {
 
   hid_t sid, dataset,file_dataspace, aid, mem_dataspace, attr, fid, aspace;
   
@@ -443,8 +448,24 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
 
 #ifndef HDF5_HAVE_MULTI_DATASETS
 
+#ifdef HDF5_COMPRESSION
+  hid_t dset_creation_plist;
+  hsize_t chunk_dims1[1];
+  chunk_dims1[0] = chunk_size; 
+  dset_creation_plist = H5Pcreate(H5P_DATASET_CREATE);
+
+  H5Pset_chunk(dset_creation_plist,1,chunk_dims1);
+
+  H5Pset_deflate(dset_creation_plist,6);
+ 
+  if( (dataset = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, dset_creation_plist, H5P_DEFAULT)) < 0)
+    throw runtime_error( "Unable to create HDF5 dataset " );
+  H5Pclose(dset_creation_plist);
+
+#else  
   if( (dataset = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT)) < 0)
     throw runtime_error( "Unable to create HDF5 dataset " );
+#endif
 
   delete[] c_str;
 
@@ -470,7 +491,10 @@ void GenericFileIO_HDF::write_hdf(const void *buf, size_t count, uint64_t offset
   mem_dataspace = H5Screate_simple (1, hypercount, NULL);
 
   hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
-//  H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+
+#ifdef HDF5_COMPRESSION
+ H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+#endif
   // write data
   t1 = MPI_Wtime();
 
@@ -802,10 +826,821 @@ void GenericIO::write() {
     write<false>();
 }
 
+void GenericIO::write_hdf() {
+
+  hid_t fid, space, dset, attr, filetype, atype, gid, aid, tid1, rid1, rid2, dxpl_id;
+  hid_t fapl_id;  // File access templates
+  hid_t sid, dataset;
+  hsize_t dims[1]; // dataspace dim sizes
+  hsize_t adim[1];
+  hsize_t start[1];
+  hsize_t start_CRC[1];			/* for hyperslab setting */
+  hsize_t hypercount[1], stride[1];	/* for hyperslab setting */
+  hsize_t sizedims[1], adims[1];
+
+  hid_t file_dataspace, mem_dataspace;
+  hid_t file_dataspace_CRC, mem_dataspace_CRC;
+  /* Groups */
+  hid_t  grp_l_id;
+  hid_t  grp_p_id;
+  hid_t  grp_s_id;
+  herr_t ret;
+  double timestep[1];
+  char notes[] = {"Important notes go here"};
+
+  uint64_t FileSize = 0;
+  hsize_t chunk_size = 0;
+
+  int NRanks, Rank;
+  MPI_Comm_rank(Comm, &Rank);
+  MPI_Comm_size(Comm, &NRanks);
+
+#ifdef __bgq__
+  MPI_Barrier(Comm);
+#endif
+
+
+  double StartTime = MPI_Wtime();
+
+  GenericFileIO_HDF *gfio_hdf;
+  // The communicator may be COMM_SELF for independent IO?
+  FH.get() = new GenericFileIO_HDF(MPI_COMM_WORLD);
+  FH.get()->open(FileName);
+
+  if (FileIOType == FileIOHDF) {// Can remove this line later
+    gfio_hdf = dynamic_cast<GenericFileIO_HDF *> (FH.get());
+    fid = gfio_hdf->get_fileid();
+
+    filetype = H5Tcopy (H5T_C_S1);
+    ret = H5Tset_size (filetype, H5T_VARIABLE);
+
+    // Create a header dataset containing file's metadata information
+
+    gid   = H5Gcreate2(fid, "Variables", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+    //
+    // Create dataset with a null dataspace.
+    //
+    space = H5Screate (H5S_NULL);
+    
+    // Create dataspace.  Setting maximum size to NULL sets the maximum
+    // size to be the current size.
+    //
+    adim[0] = 1;
+    aid = H5Screate(H5S_SIMPLE);
+    ret = H5Sset_extent_simple(aid, 1, adim, NULL);
+    //
+    // Create the attribute 
+    //
+    timestep[0] = 123.123; 
+    attr = H5Acreate (gid, "Time step", H5T_NATIVE_DOUBLE, aid, H5P_DEFAULT, H5P_DEFAULT);
+    ret  = H5Awrite (attr, H5T_NATIVE_DOUBLE, timestep);
+    ret = H5Aclose (attr);
+    
+    ret = H5Sclose (aid);
+    
+    aid = H5Screate(H5S_SCALAR);
+    atype = H5Tcopy(H5T_C_S1);
+    H5Tset_size(atype, 23);
+    H5Tset_strpad(atype,H5T_STR_NULLTERM);
+    
+    attr = H5Acreate (gid, "Notes", atype, aid, H5P_DEFAULT, H5P_DEFAULT);
+    ret  = H5Awrite (attr, atype, notes);
+    ret  = H5Aclose (attr);
+    ret = H5Sclose (aid);
+    ret = H5Tclose (filetype);
+    ret = H5Gclose (gid);
+    
+    gid = H5Gopen2(fid, "Variables", H5P_DEFAULT);
+
+#ifdef HDF5_COMPRESSION
+    uint64_t max_nelms = 0;
+    MPI_Allreduce(&NElems, &max_nelms, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+    //assert(((uint64_t)((size_t)(max_nelms)) == max_nelms);
+    chunk_size = (hsize_t)max_nelms;
+
+#endif
+  } // Can remove this line later
+
+
+#ifdef HDF5_DERV
+  Hdata = (hacc_t *) malloc (NElems * sizeof (hacc_t));
+
+  Hmemtype = H5Tcreate (H5T_COMPOUND, sizeof (hacc_t));
+  H5Tinsert (Hmemtype, "id",
+		      HOFFSET (hacc_t, id), H5T_NATIVE_LONG);
+  H5Tinsert (Hmemtype, "mask", 
+		      HOFFSET (hacc_t, mask), H5T_NATIVE_UINT16);
+  H5Tinsert (Hmemtype, "x",
+		      HOFFSET (hacc_t, x), H5T_NATIVE_FLOAT);
+  H5Tinsert (Hmemtype, "y",
+		      HOFFSET (hacc_t, y), H5T_NATIVE_FLOAT);
+  H5Tinsert (Hmemtype, "z",
+		      HOFFSET (hacc_t, z), H5T_NATIVE_FLOAT);
+  H5Tinsert (Hmemtype, "vx",
+		      HOFFSET (hacc_t, vx), H5T_NATIVE_FLOAT);
+  H5Tinsert (Hmemtype, "vy",
+		      HOFFSET (hacc_t, vy), H5T_NATIVE_FLOAT);
+  H5Tinsert (Hmemtype, "vz",
+		      HOFFSET (hacc_t, vz), H5T_NATIVE_FLOAT);
+  H5Tinsert (Hmemtype, "phi",
+		      HOFFSET (hacc_t, phi), H5T_NATIVE_FLOAT);
+
+#endif
+
+  uint64_t Offsets_glb;
+	
+  double t1, timer=0.;
+  for (size_t i = 0; i < Vars.size(); ++i) {
+
+    uint64_t WriteSize = NElems*Vars[i].Size;
+    void *Data = Vars[i].Data;
+    uint64_t CRC = 0;
+
+    if (FileIOType == FileIOHDF) {
+	  hid_t dtype;
+	  // CRC calculation 
+	  crc send;
+	  //	cout << Vars[i].Size << Vars[i].Name << endl;
+	  send.CRC64 = crc64_omp(Data, NElems*Vars[i].Size);
+	  send.CRC64_size = NElems*Vars[i].Size;
+	  struct crc_s *rbufv;
+	  uint64_t *sbufv;
+
+	  int          blocklengths[2] = {1,1};
+  	  MPI_Datatype types[2] = {MPI_UINT64_T, MPI_LONG_LONG_INT };
+	  MPI_Datatype mpi_crc_type;
+	  MPI_Aint     offsets[2];
+
+	  offsets[0] = offsetof(crc, CRC64);
+	  offsets[1] = offsetof(crc, CRC64_size);
+
+	  MPI_Type_create_struct(2, blocklengths, offsets, types, &mpi_crc_type);
+	  MPI_Type_commit(&mpi_crc_type);
+
+	  rbufv = NULL;
+	  if(Rank == 0) {
+	    rbufv = new crc_s [NRanks*sizeof(struct crc_s)];
+	  }
+	  sbufv = new uint64_t [NRanks*sizeof(uint64_t)];
+
+	  MPI_Gather( &send, 1, mpi_crc_type, rbufv, 1, mpi_crc_type, 0, MPI_COMM_WORLD);
+	  if(Rank == 0) {
+	    uint64_t CRC_sum = 0;
+	    sbufv[0] = 0;
+	    int k;
+	    for (k =0; k<NRanks; k++) {
+	      CRC_sum = crc64_combine(CRC_sum, rbufv[k].CRC64, rbufv[k].CRC64_size);
+	      // find offsets
+	      if(k > 0)
+	        sbufv[k] = sbufv[k-1] + rbufv[k-1].CRC64_size/Vars[i].Size;
+	      // cout << k << " : " << sbufv[k] << endl;
+	    }
+	    delete rbufv;
+	    CRC = CRC_sum;
+	    //  cout << "CRC_sum" << CRC << endl;
+	  } else
+	    CRC = 0;
+
+	  uint64_t Offsets;
+      /// What does this line do??
+	  MPI_Scatter( sbufv, 1, MPI_UINT64_T, &Offsets, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); 
+	  delete sbufv;
+	  MPI_Type_free(&mpi_crc_type);
+
+#ifdef HDF5_DERV
+	  hsize_t ii;
+	  if( Vars[i].Name.compare("id") == 0) {
+	    for (ii=0; ii < NElems; ii++)
+	      Hdata[ii].id = *((int64_t *)Data + ii);
+	    CRC_values[0] = CRC;
+	  } else if( Vars[i].Name.compare("mask") == 0) {
+	    for (ii=0; ii < NElems; ii++)
+	      Hdata[ii].mask = *((uint16_t *)Data + ii);
+	    CRC_values[1] = CRC;
+	  } else if( Vars[i].Name.compare("x") == 0) {
+	    for (ii=0; ii < NElems; ii++)
+	      Hdata[ii].x = *((float *)Data + ii);
+	    CRC_values[2] = CRC;
+	  } else if( Vars[i].Name.compare("y") == 0) {
+	    for (ii=0; ii < NElems; ii++)
+	      Hdata[ii].y = *((float *)Data + ii);
+	    CRC_values[3] = CRC;
+	  } else if( Vars[i].Name.compare("z") == 0) {
+	    for (ii=0; ii < NElems; ii++)
+	      Hdata[ii].z = *((float *)Data + ii);
+	    CRC_values[4] = CRC;
+	  } else if( Vars[i].Name.compare("vx") == 0) {
+	    for (ii=0; ii < NElems; ii++)
+	      Hdata[ii].vx = *((float *)Data + ii);
+	    CRC_values[5] = CRC;
+	  } else if( Vars[i].Name.compare("vy") == 0) {
+	    for (ii=0; ii < NElems; ii++)
+	      Hdata[ii].vy = *((float *)Data + ii);
+	    CRC_values[6] = CRC;
+	  } else if( Vars[i].Name.compare("vz") == 0) {
+	    for (ii=0; ii < NElems; ii++)
+	      Hdata[ii].vz = *((float *)Data + ii);
+	    CRC_values[7] = CRC;
+	  } else if( Vars[i].Name.compare("phi") == 0) {
+	    for (ii=0; ii < NElems; ii++) 
+	      Hdata[ii].phi = *((float *)Data + ii);
+	    CRC_values[8] = CRC;
+	  }
+	
+	  Offsets_glb = Offsets;
+
+#else
+	  if( Vars[i].Name.compare("id") == 0) {
+	    dtype = H5T_NATIVE_LONG;
+	  } else if( Vars[i].Name.compare("mask") == 0) {
+	    dtype = H5T_NATIVE_UINT16;
+	  }else {
+	    dtype = H5T_NATIVE_FLOAT;
+	  }
+	
+	  gfio_hdf->write_hdf_internal(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, chunk_size,&CRC, gid, TotElem, i);
+#endif
+    }
+  }
+
+#ifdef HDF5_DERV
+  if (FileIOType == FileIOHDF) {
+   /*
+     * Create dataspace.  Setting maximum size to NULL sets the maximum
+     * size to be the current size.
+     */
+    hid_t filespace, memspace, dset, plist_id;
+    hsize_t     dims[1];
+    dims[0] = (hsize_t)TotElem;
+    filespace = H5Screate_simple (1, dims, NULL);
+
+    /*
+     * Create the dataset and write the compound data to it.
+     */
+#ifdef HDF5_COMPRESSION
+  hid_t dset_creation_plist;
+  hsize_t chunk_dims1[1];
+  chunk_dims1[0] = chunk_size; 
+  dset_creation_plist = H5Pcreate(H5P_DATASET_CREATE);
+
+  H5Pset_chunk(dset_creation_plist,1,chunk_dims1);
+
+  H5Pset_deflate(dset_creation_plist,6);
+ 
+  //if( (dataset = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, dset_creation_plist, H5P_DEFAULT)) < 0)
+  if((dset = H5Dcreate (gid, "DATA", Hmemtype, filespace, H5P_DEFAULT, dset_creation_plist, H5P_DEFAULT))<0)
+     throw runtime_error( "Unable to create HDF5 dataset " );
+  H5Pclose(dset_creation_plist);
+
+
+#else
+    dset = H5Dcreate (gid, "DATA", Hmemtype, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+#endif
+
+    hsize_t count[1];	          /* hyperslab selection parameters */
+    hsize_t offset[1];
+    herr_t status;
+    count[0] = NElems;
+    memspace = H5Screate_simple(1, count, NULL);
+
+    offset[0] = Offsets_glb;
+//cerr<<"mpi_rank is "<<Rank <<" count: "<<count[0] <<"offset "<<offset[0]<<endl;
+
+    H5Sselect_hyperslab(filespace, H5S_SELECT_SET, offset, NULL, count, NULL);
+
+    plist_id = H5Pcreate(H5P_DATASET_XFER);
+#ifdef HDF5_COMPRESSION
+    H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+#endif
+
+    t1 = MPI_Wtime();
+    status = H5Dwrite (dset, Hmemtype, memspace, filespace, plist_id, Hdata);
+    timer = MPI_Wtime()-t1;
+
+    H5Pclose(plist_id);
+    status = H5Dclose (dset);
+    status = H5Sclose (filespace);
+    status = H5Sclose (memspace);
+    status = H5Tclose (Hmemtype);
+    free(Hdata);
+
+    // WRITE THE CRC data
+
+    hsize_t crc_dim[1] = {9};
+    file_dataspace = H5Screate(H5S_SIMPLE);
+    H5Sset_extent_simple(file_dataspace, 1, crc_dim, NULL);
+
+    hid_t dcpl = H5Pcreate (H5P_DATASET_CREATE);
+    status = H5Pset_layout (dcpl, H5D_COMPACT);
+
+    dataset = H5Dcreate2(gid, "CRC_id_mask_x_y_z_vx_vy_vz_phi", H5T_NATIVE_ULONG, file_dataspace,
+    			 H5P_DEFAULT, dcpl, H5P_DEFAULT);
+    H5Sclose (file_dataspace);
+    H5Pclose (dcpl);
+
+    t1 = MPI_Wtime();
+    if( Rank == 0 ) {
+      ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, H5S_ALL, H5S_ALL, H5P_DEFAULT, CRC_values);
+    } else {
+      mem_dataspace = H5Screate(H5S_NULL);
+      ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, mem_dataspace, H5P_DEFAULT, NULL);
+      H5Sclose (mem_dataspace);
+    }
+    H5Dclose (dataset);
+    
+    timer += MPI_Wtime()-t1;
+  }
+#endif
+
+
+#ifdef HDF5_HAVE_MULTI_DATASETS
+  if (FileIOType == FileIOHDF) {
+    hid_t plist_id;
+    plist_id = H5Pcreate(H5P_DATASET_XFER);
+    //H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+    t1 = MPI_Wtime();
+    H5Dwrite_multi(plist_id, Vars.size(), multi_info);
+    timer = MPI_Wtime()-t1;
+    if(Rank == 0)  {
+      H5D_mpio_actual_io_mode_t actual_io_mode;
+      H5Pget_mpio_actual_io_mode( plist_id, &actual_io_mode);
+      cout << " collective mode " << actual_io_mode << endl; 
+    }
+
+    H5Pclose(plist_id);
+
+    for (size_t i = 0; i < Vars.size(); ++i) {
+      H5Dclose(multi_info[i].dset_id);
+      H5Sclose(multi_info[i].mem_space_id);
+      H5Sclose(multi_info[i].dset_space_id);
+    }
+  }
+#endif
+
+  double mean=0;
+  double min;
+  double max;
+  double *rtimers=NULL;
+  if(Rank == 0)  {
+    rtimers = (double *) malloc(NRanks*sizeof(double));
+  }
+  MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+  if(Rank == 0)  {
+
+    min = rtimers[0];
+    max = min;
+
+    for(int n = 1; n < NRanks; n++) {
+      if(rtimers[n] > max)
+	max=rtimers[n];
+      mean += rtimers[n];
+      if(rtimers[n] < min)
+	min=rtimers[n];
+    }
+    free(rtimers);
+  }
+
+  if (FileIOType == FileIOHDF)
+    ret = H5Gclose(gid);
+
+  // Here we want to set the 
+  close();
+  //MPI_Barrier(Comm);
+
+  double EndTime = MPI_Wtime();
+  double TotalTime = EndTime - StartTime;
+  double MaxTotalTime;
+  MPI_Reduce(&TotalTime, &MaxTotalTime, 1, MPI_DOUBLE, MPI_MAX, 0, Comm);
+
+  if (Rank == 0) {
+    // Obtain file size, this is just for benchmarking purpose.We can set the file size to genericIO by using H5Fgetsize.
+    hid_t fid = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
+    if(fid <0)
+        throw runtime_error( ("Unable to open the file: ") + FileName);
+    hsize_t h5_filesize=0;
+    if(H5Fget_filesize(fid,&h5_filesize)<0) {
+        H5Fclose(fid);
+        throw runtime_error( ("Unable to obtain the HDF5 file size: ") + FileName);
+    }
+    H5Fclose(fid);
+#if defined(HDF5_DERV) || defined(HDF5_HAVE_MULTI_DATASETS)        
+    printf("WRITE DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", mean/NRanks, min, max,
+	   (double)h5_filesize/(mean/NRanks) / (1024.*1024.), 
+	   (double)h5_filesize/min/(1024.*1024.), (double)h5_filesize/max/(1024.*1024.) );
+#endif
+
+    double Rate = ((double) h5_filesize) / MaxTotalTime / (1024.*1024.);
+    cout << NRanks << " Procs Wrote " << Vars.size() << " variables to " << FileName <<
+            " (" << h5_filesize << " bytes) in " << MaxTotalTime << "s: " <<
+            Rate << " MB/s" << endl;
+  }
+
+
+  return;
+}
+// Note: writing errors are not currently recoverable (one rank may fail
+// while the others don't).
+// Uncomment or comment this line for debugging
+//#if 0
+template <bool IsBigEndian>
+void GenericIO::write() {
+
+//cerr<<"coming to write "<<endl;
+ bool use_hdf5 = false;
+ const char *EnvStr1 = getenv("GENERICIO_USE_HDF");
+ if (EnvStr1 && string(EnvStr1) == "1"){
+#ifdef GENERICIO_HAVE_HDF
+    use_hdf5 = true;
+#endif
+ }
+ if(true == use_hdf5) 
+  write_hdf();
+//#else 
+ else {
+//cerr<<"coming to mpiio "<<endl;
+  const char *Magic = IsBigEndian ? MagicBE : MagicLE;
+
+  uint64_t FileSize = 0;
+
+  int NRanks, Rank;
+  MPI_Comm_rank(Comm, &Rank);
+  MPI_Comm_size(Comm, &NRanks);
+
+#ifdef __bgq__
+  MPI_Barrier(Comm);
+#endif
+  MPI_Comm_split(Comm, Partition, Rank, &SplitComm);
+
+  int SplitNRanks, SplitRank;
+  MPI_Comm_rank(SplitComm, &SplitRank);
+  MPI_Comm_size(SplitComm, &SplitNRanks);
+
+  string LocalFileName;
+  if (SplitNRanks != NRanks) {
+    if (Rank == 0) {
+      // In split mode, the specified file becomes the rank map, and the real
+      // data is partitioned.
+
+      vector<int> MapRank, MapPartition;
+      MapRank.resize(NRanks);
+      for (int i = 0; i < NRanks; ++i) MapRank[i] = i;
+
+      MapPartition.resize(NRanks);
+      MPI_Gather(&Partition, 1, MPI_INT, &MapPartition[0], 1, MPI_INT, 0, Comm);
+
+      GenericIO GIO(MPI_COMM_SELF, FileName, FileIOType);
+      GIO.setNumElems(NRanks);
+      GIO.addVariable("$rank", MapRank); /* this is for use by humans; the reading
+                                            code assumes that the partitions are in
+                                            rank order */
+      GIO.addVariable("$partition", MapPartition);
+
+      vector<int> CX, CY, CZ;
+      int TopoStatus;
+      MPI_Topo_test(Comm, &TopoStatus);
+      if (TopoStatus == MPI_CART) {
+        CX.resize(NRanks);
+        CY.resize(NRanks);
+        CZ.resize(NRanks);
+
+        for (int i = 0; i < NRanks; ++i) {
+          int C[3];
+          MPI_Cart_coords(Comm, i, 3, C);
+
+          CX[i] = C[0];
+          CY[i] = C[1];
+          CZ[i] = C[2];
+        }
+
+        GIO.addVariable("$x", CX);
+        GIO.addVariable("$y", CY);
+        GIO.addVariable("$z", CZ);
+      }
+
+      GIO.write();
+    } else {
+      MPI_Gather(&Partition, 1, MPI_INT, 0, 0, MPI_INT, 0, Comm);
+    }
+
+    stringstream ss;
+    ss << FileName << "#" << Partition;
+    LocalFileName = ss.str();
+  } else {
+    LocalFileName = FileName;
+  }
+
+  RankHeader<IsBigEndian> RHLocal;
+  int Dims[3], Periods[3], Coords[3];
+
+  int TopoStatus;
+  MPI_Topo_test(Comm, &TopoStatus);
+  if (TopoStatus == MPI_CART) {
+    MPI_Cart_get(Comm, 3, Dims, Periods, Coords);
+  } else {
+    Dims[0] = NRanks;
+    std::fill(Dims + 1, Dims + 3, 1);
+    std::fill(Periods, Periods + 3, 0);
+    Coords[0] = Rank;
+    std::fill(Coords + 1, Coords + 3, 0);
+  }
+
+  std::copy(Coords, Coords + 3, RHLocal.Coords);
+  RHLocal.NElems = NElems;
+  RHLocal.Start = 0;
+  RHLocal.GlobalRank = Rank;
+
+  bool ShouldCompress = DefaultShouldCompress;
+  const char *EnvStr = getenv("GENERICIO_COMPRESS");
+  if (EnvStr) {
+    int Mod = atoi(EnvStr);
+    ShouldCompress = (Mod > 0);
+  }
+
+  bool NeedsBlockHeaders = ShouldCompress;
+  EnvStr = getenv("GENERICIO_FORCE_BLOCKS");
+  if (!NeedsBlockHeaders && EnvStr) {
+    int Mod = atoi(EnvStr);
+    NeedsBlockHeaders = (Mod > 0);
+  }
+
+  vector<BlockHeader<IsBigEndian> > LocalBlockHeaders;
+  vector<void *> LocalData;
+  vector<bool> LocalHasExtraSpace;
+  vector<vector<unsigned char> > LocalCData;
+  if (NeedsBlockHeaders) {
+    LocalBlockHeaders.resize(Vars.size());
+    LocalData.resize(Vars.size());
+    LocalHasExtraSpace.resize(Vars.size());
+    if (ShouldCompress)
+      LocalCData.resize(Vars.size());
+
+    for (size_t i = 0; i < Vars.size(); ++i) {
+      // Filters null by default, leave null starting address (needs to be
+      // calculated by the header-writing rank).
+      memset(&LocalBlockHeaders[i], 0, sizeof(BlockHeader<IsBigEndian>));
+      if (ShouldCompress) {
+        LocalCData[i].resize(sizeof(CompressHeader<IsBigEndian>));
+
+        CompressHeader<IsBigEndian> *CH = (CompressHeader<IsBigEndian>*) &LocalCData[i][0];
+        CH->OrigCRC = crc64_omp(Vars[i].Data, Vars[i].Size*NElems);
+
+#ifdef _OPENMP
+#pragma omp master
+  {
+#endif
+
+       if (!blosc_initialized) {
+         blosc_init();
+         blosc_initialized = true;
+       }
+
+#ifdef _OPENMP
+       blosc_set_nthreads(omp_get_max_threads());
+  }
+#endif
+
+        LocalCData[i].resize(LocalCData[i].size() + NElems*Vars[i].Size);
+        if (blosc_compress(9, 1, Vars[i].Size, NElems*Vars[i].Size, Vars[i].Data,
+                           &LocalCData[i][0] + sizeof(CompressHeader<IsBigEndian>),
+                           NElems*Vars[i].Size) <= 0)
+          goto nocomp;
+
+        strncpy(LocalBlockHeaders[i].Filters[0], CompressName, FilterNameSize);
+        size_t CNBytes, CCBytes, CBlockSize;
+        blosc_cbuffer_sizes(&LocalCData[i][0] + sizeof(CompressHeader<IsBigEndian>),
+                            &CNBytes, &CCBytes, &CBlockSize);
+        LocalCData[i].resize(CCBytes + sizeof(CompressHeader<IsBigEndian>));
+
+        LocalBlockHeaders[i].Size = LocalCData[i].size();
+        LocalCData[i].resize(LocalCData[i].size() + CRCSize);
+        LocalData[i] = &LocalCData[i][0];
+        LocalHasExtraSpace[i] = true;
+      } else {
+nocomp:
+        LocalBlockHeaders[i].Size = NElems*Vars[i].Size;
+        LocalData[i] = Vars[i].Data;
+        LocalHasExtraSpace[i] = Vars[i].HasExtraSpace;
+      }
+    }
+  }
+
+  double StartTime = MPI_Wtime();
+
+  if (SplitRank == 0) {
+    uint64_t HeaderSize = sizeof(GlobalHeader<IsBigEndian>) + Vars.size()*sizeof(VariableHeader<IsBigEndian>) +
+                          SplitNRanks*sizeof(RankHeader<IsBigEndian>) + CRCSize;
+    if (NeedsBlockHeaders)
+      HeaderSize += SplitNRanks*Vars.size()*sizeof(BlockHeader<IsBigEndian>);
+
+    vector<char> Header(HeaderSize, 0);
+    GlobalHeader<IsBigEndian> *GH = (GlobalHeader<IsBigEndian> *) &Header[0];
+    std::copy(Magic, Magic + MagicSize, GH->Magic);
+    GH->HeaderSize = HeaderSize - CRCSize;
+    GH->NElems = NElems; // This will be updated later
+    std::copy(Dims, Dims + 3, GH->Dims);
+    GH->NVars = Vars.size();
+    GH->VarsSize = sizeof(VariableHeader<IsBigEndian>);
+    GH->VarsStart = sizeof(GlobalHeader<IsBigEndian>);
+    GH->NRanks = SplitNRanks;
+    GH->RanksSize = sizeof(RankHeader<IsBigEndian>);
+    GH->RanksStart = GH->VarsStart + Vars.size()*sizeof(VariableHeader<IsBigEndian>);
+    GH->GlobalHeaderSize = sizeof(GlobalHeader<IsBigEndian>);
+    std::copy(PhysOrigin, PhysOrigin + 3, GH->PhysOrigin);
+    std::copy(PhysScale,  PhysScale  + 3, GH->PhysScale);
+    if (!NeedsBlockHeaders) {
+      GH->BlocksSize = GH->BlocksStart = 0;
+    } else {
+      GH->BlocksSize = sizeof(BlockHeader<IsBigEndian>);
+      GH->BlocksStart = GH->RanksStart + SplitNRanks*sizeof(RankHeader<IsBigEndian>);
+    }
+
+    uint64_t RecordSize = 0;
+    VariableHeader<IsBigEndian> *VH = (VariableHeader<IsBigEndian> *) &Header[GH->VarsStart];
+    for (size_t i = 0; i < Vars.size(); ++i, ++VH) {
+      string VName(Vars[i].Name);
+      VName.resize(NameSize);
+
+      std::copy(VName.begin(), VName.end(), VH->Name);
+      uint64_t VFlags = 0;
+      if (Vars[i].IsFloat)  VFlags |= FloatValue;
+      if (Vars[i].IsSigned) VFlags |= SignedValue;
+      if (Vars[i].IsPhysCoordX) VFlags |= ValueIsPhysCoordX;
+      if (Vars[i].IsPhysCoordY) VFlags |= ValueIsPhysCoordY;
+      if (Vars[i].IsPhysCoordZ) VFlags |= ValueIsPhysCoordZ;
+      if (Vars[i].MaybePhysGhost) VFlags |= ValueMaybePhysGhost;
+      VH->Flags = VFlags;
+      RecordSize += VH->Size = Vars[i].Size;
+      VH->ElementSize = Vars[i].ElementSize;
+    }
+
+    MPI_Gather(&RHLocal, sizeof(RHLocal), MPI_BYTE,
+               &Header[GH->RanksStart], sizeof(RHLocal),
+               MPI_BYTE, 0, SplitComm);
+
+    if (NeedsBlockHeaders) {
+      MPI_Gather(&LocalBlockHeaders[0],
+                 Vars.size()*sizeof(BlockHeader<IsBigEndian>), MPI_BYTE,
+                 &Header[GH->BlocksStart],
+                 Vars.size()*sizeof(BlockHeader<IsBigEndian>), MPI_BYTE,
+                 0, SplitComm);
+
+      BlockHeader<IsBigEndian> *BH = (BlockHeader<IsBigEndian> *) &Header[GH->BlocksStart];
+      for (int i = 0; i < SplitNRanks; ++i)
+      for (size_t j = 0; j < Vars.size(); ++j, ++BH) {
+        if (i == 0 && j == 0)
+          BH->Start = HeaderSize;
+        else
+          BH->Start = BH[-1].Start + BH[-1].Size + CRCSize;
+      }
+
+      RankHeader<IsBigEndian> *RH = (RankHeader<IsBigEndian> *) &Header[GH->RanksStart];
+      RH->Start = HeaderSize; ++RH;
+      for (int i = 1; i < SplitNRanks; ++i, ++RH) {
+        RH->Start =
+          ((BlockHeader<IsBigEndian> *) &Header[GH->BlocksStart])[i*Vars.size()].Start;
+        GH->NElems += RH->NElems;
+      }
+
+      // Compute the total file size.
+      uint64_t LastData = BH[-1].Size + CRCSize;
+      FileSize = BH[-1].Start + LastData;
+    } else {
+      RankHeader<IsBigEndian> *RH = (RankHeader<IsBigEndian> *) &Header[GH->RanksStart];
+      RH->Start = HeaderSize; ++RH;
+      for (int i = 1; i < SplitNRanks; ++i, ++RH) {
+        uint64_t PrevNElems = RH[-1].NElems;
+        uint64_t PrevData = PrevNElems*RecordSize + CRCSize*Vars.size();
+        RH->Start = RH[-1].Start + PrevData;
+        GH->NElems += RH->NElems;
+      }
+
+      // Compute the total file size.
+      uint64_t LastNElems = RH[-1].NElems;
+      uint64_t LastData = LastNElems*RecordSize + CRCSize*Vars.size();
+      FileSize = RH[-1].Start + LastData;
+    }
+
+    // Now that the starting offset has been computed, send it back to each rank.
+    MPI_Scatter(&Header[GH->RanksStart], sizeof(RHLocal),
+                MPI_BYTE, &RHLocal, sizeof(RHLocal),
+                MPI_BYTE, 0, SplitComm);
+
+    if (NeedsBlockHeaders)
+      MPI_Scatter(&Header[GH->BlocksStart],
+                  sizeof(BlockHeader<IsBigEndian>)*Vars.size(), MPI_BYTE,
+                  &LocalBlockHeaders[0],
+                  sizeof(BlockHeader<IsBigEndian>)*Vars.size(), MPI_BYTE,
+                  0, SplitComm);
+
+    uint64_t HeaderCRC = crc64_omp(&Header[0], HeaderSize - CRCSize);
+    crc64_invert(HeaderCRC, &Header[HeaderSize - CRCSize]);
+
+    if (FileIOType == FileIOMPI)
+      FH.get() = new GenericFileIO_MPI(MPI_COMM_SELF);
+    else if (FileIOType == FileIOMPICollective)
+      FH.get() = new GenericFileIO_MPICollective(MPI_COMM_SELF);
+    else
+      FH.get() = new GenericFileIO_POSIX();
+
+    FH.get()->open(LocalFileName);
+    FH.get()->setSize(FileSize);
+    FH.get()->write(&Header[0], HeaderSize, 0, "header");
+
+    close();
+  } else {
+    MPI_Gather(&RHLocal, sizeof(RHLocal), MPI_BYTE, 0, 0, MPI_BYTE, 0, SplitComm);
+    if (NeedsBlockHeaders)
+      MPI_Gather(&LocalBlockHeaders[0], Vars.size()*sizeof(BlockHeader<IsBigEndian>),
+                 MPI_BYTE, 0, 0, MPI_BYTE, 0, SplitComm);
+    MPI_Scatter(0, 0, MPI_BYTE, &RHLocal, sizeof(RHLocal), MPI_BYTE, 0, SplitComm);
+    if (NeedsBlockHeaders)
+      MPI_Scatter(0, 0, MPI_BYTE, &LocalBlockHeaders[0], sizeof(BlockHeader<IsBigEndian>)*Vars.size(),
+                  MPI_BYTE, 0, SplitComm);
+  }
+
+  MPI_Barrier(SplitComm);
+
+  if (FileIOType == FileIOMPI)
+    FH.get() = new GenericFileIO_MPI(SplitComm);
+  else if (FileIOType == FileIOMPICollective)
+    FH.get() = new GenericFileIO_MPICollective(SplitComm);
+  else
+    FH.get() = new GenericFileIO_POSIX();
+
+  FH.get()->open(LocalFileName);
+//cerr<<"before writing data "<<endl;
+
+  uint64_t Offset = RHLocal.Start;
+  for (size_t i = 0; i < Vars.size(); ++i) {
+    uint64_t WriteSize = NeedsBlockHeaders ?
+                         LocalBlockHeaders[i].Size : NElems*Vars[i].Size;
+    void *Data = NeedsBlockHeaders ? LocalData[i] : Vars[i].Data;
+    uint64_t CRC = crc64_omp(Data, WriteSize);
+    bool HasExtraSpace = NeedsBlockHeaders ?
+                         LocalHasExtraSpace[i] : Vars[i].HasExtraSpace;
+    char *CRCLoc = HasExtraSpace ?  ((char *) Data) + WriteSize : (char *) &CRC;
+
+    if (NeedsBlockHeaders)
+      Offset = LocalBlockHeaders[i].Start;
+
+    // When using extra space for the CRC write, preserve the original contents.
+    char CRCSave[CRCSize];
+    if (HasExtraSpace)
+      std::copy(CRCLoc, CRCLoc + CRCSize, CRCSave);
+
+    crc64_invert(CRC, CRCLoc);
+
+    if (HasExtraSpace) {
+//cerr<<"writing data "<<endl;
+      FH.get()->write(Data, WriteSize + CRCSize, Offset, Vars[i].Name + " with CRC");
+    } else {
+      FH.get()->write(Data, WriteSize, Offset, Vars[i].Name);
+      FH.get()->write(CRCLoc, CRCSize, Offset + WriteSize, Vars[i].Name + " CRC");
+    }
+
+    if (HasExtraSpace)
+       std::copy(CRCSave, CRCSave + CRCSize, CRCLoc);
+
+    Offset += WriteSize + CRCSize;
+  }
+
+  close();
+  MPI_Barrier(Comm);
+
+  double EndTime = MPI_Wtime();
+  double TotalTime = EndTime - StartTime;
+  double MaxTotalTime;
+  MPI_Reduce(&TotalTime, &MaxTotalTime, 1, MPI_DOUBLE, MPI_MAX, 0, Comm);
+
+  if (SplitNRanks != NRanks) {
+    uint64_t ContribFileSize = (SplitRank == 0) ? FileSize : 0;
+    MPI_Reduce(&ContribFileSize, &FileSize, 1, MPI_UINT64_T, MPI_SUM, 0, Comm);
+  }
+
+  if (Rank == 0) {
+    double Rate = ((double) FileSize) / MaxTotalTime / (1024.*1024.);
+    cout << "Wrote " << Vars.size() << " variables to " << FileName <<
+            " (" << FileSize << " bytes) in " << MaxTotalTime << "s: " <<
+            Rate << " MB/s" << endl;
+  }
+
+  MPI_Comm_free(&SplitComm);
+  SplitComm = MPI_COMM_NULL;
+ }
+//#endif
+}
+#endif
+//Uncomment or comment this line for debugging
+//#endif //if 0
+// Still keep the old code in case we need to check. 
+// Uncomment or comment this line for debugging
+#if 0
 // Note: writing errors are not currently recoverable (one rank may fail
 // while the others don't).
 template <bool IsBigEndian>
 void GenericIO::write() {
+
   const char *Magic = IsBigEndian ? MagicBE : MagicLE;
 #ifdef GENERICIO_HAVE_HDF
   hid_t fid, space, dset, attr, filetype, atype, gid, aid, tid1, rid1, rid2, dxpl_id;
@@ -1203,6 +2038,8 @@ nocomp:
     ret = H5Gclose (gid);
     
     gid = H5Gopen2(fid, "Variables", H5P_DEFAULT);
+
+
   }
 #endif
 
@@ -1340,10 +2177,10 @@ nocomp:
 	    Hdata[ii].vz = *((float *)Data + ii);
 	  CRC_values[7] = CRC;
 	} else if( Vars[i].Name.compare("phi") == 0) {
-	  for (ii=0; ii < NElems; ii++) {
+	  for (ii=0; ii < NElems; ii++) 
 	    Hdata[ii].phi = *((float *)Data + ii);
 	  CRC_values[8] = CRC;
-	  }
+	  
 	}
 	Offsets_glb = Offsets;
 
@@ -1356,7 +2193,7 @@ nocomp:
 	  dtype = H5T_NATIVE_FLOAT;
 	}
 	
-	gfio_hdf->write_hdf(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem, i);
+	gfio_hdf->write_hdf_internal(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem, i);
 #endif
       } else 
 #endif
@@ -1424,9 +2261,14 @@ nocomp:
     hsize_t crc_dim[1] = {9};
     file_dataspace = H5Screate(H5S_SIMPLE);
     H5Sset_extent_simple(file_dataspace, 1, crc_dim, NULL);
+
+    hid_t dcpl = H5Pcreate (H5P_DATASET_CREATE);
+    status = H5Pset_layout (dcpl, H5D_COMPACT);
+
     dataset = H5Dcreate2(gid, "CRC_id_mask_x_y_z_vx_vy_vz_phi", H5T_NATIVE_ULONG, file_dataspace,
-    			 H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+    			 H5P_DEFAULT, dcpl, H5P_DEFAULT);
     H5Sclose (file_dataspace);
+    H5Pclose (dcpl);
 
     t1 = MPI_Wtime();
     if( Rank == 0 ) {
@@ -1521,7 +2363,8 @@ nocomp:
   MPI_Comm_free(&SplitComm);
   SplitComm = MPI_COMM_NULL;
 }
-#endif // GENERICIO_NO_MPI
+// Uncomment or comment this line for debugging
+#endif // if 0 or NO MPI
 
 template <bool IsBigEndian>
 void GenericIO::readHeaderLeader(void *GHPtr, MismatchBehavior MB, int NRanks,
