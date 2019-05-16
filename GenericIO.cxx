@@ -1232,7 +1232,7 @@ void GenericIO::write_hdf() {
     //#endif
 
     double Rate = ((double) h5_filesize) / MaxTotalTime / (1024.*1024.);
-    cout << NRanks << " Procs Wrote " << Vars.size() << " variables to " << FileName <<
+    cout << NRanks << " Procs " << FORMAT_TYPE << " Wrote " << Vars.size() << " variables to " << FileName <<
             " (" << h5_filesize << " bytes) in " << MaxTotalTime << "s: " <<
             Rate << " MB/s" << endl;
   }
@@ -1622,7 +1622,7 @@ nocomp:
 
   if (Rank == 0) {
     double Rate = ((double) FileSize) / MaxTotalTime / (1024.*1024.);
-    cout << "Wrote " << Vars.size() << " variables to " << FileName <<
+    cout << NRanks << " Wrote " << FORMAT_TYPE  << Vars.size() << " variables to " << FileName <<
             " (" << FileSize << " bytes) in " << MaxTotalTime << "s: " <<
             Rate << " MB/s" << endl;
   }
