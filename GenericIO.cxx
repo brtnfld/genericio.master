@@ -85,7 +85,7 @@ char nc[] = { 0x1b, '[', '0', ';', '3', '9', 'm', 0 };
 
 // COMPOUND TYPE METHOD
 #ifdef GENERICIO_HAVE_HDF
-#define HDF5_DERV
+//#define HDF5_DERV
 #ifdef HDF5_DERV
 typedef struct {
   int64_t id;
@@ -1271,6 +1271,7 @@ void GenericIO::write() {
 #ifdef __bgq__
   MPI_Barrier(Comm);
 #endif
+  Partition=0; // MSB disable writing to more than one file **DEBUG**
   MPI_Comm_split(Comm, Partition, Rank, &SplitComm);
 
   int SplitNRanks, SplitRank;

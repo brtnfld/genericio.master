@@ -41,7 +41,7 @@ CC = mpicc
 CXX = mpicxx
 MPICC = mpicc
 MPICXX = mpicxx
-HDF_DIR = $(HOME)/packages/hdf5_multi/build/hdf5
+HDF_DIR = $(HOME)/packages/hdf5/build/hdf5
 
 #HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
 #HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build.edison/hdf5
@@ -80,7 +80,6 @@ HDF_INC = -I$(HDF_DIR)/include
 endif
 LIB = $(HDF_LIB) #-lirc
 INC = $(HDF_INC)
-
 
 all: fe-progs mpi-progs 
 sql: fe-sqlite
