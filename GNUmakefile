@@ -37,8 +37,8 @@
 # 
 # *****************************************************************************
 
-CC = gcc
-CXX = g++
+CC = mpicc
+CXX = mpicxx
 
 MPICC = mpicc
 MPICXX = mpicxx

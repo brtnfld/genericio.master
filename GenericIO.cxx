@@ -86,6 +86,11 @@ GenericFileIO_MPI::~GenericFileIO_MPI() {
 void GenericFileIO_MPI::open(const std::string &FN, bool ForReading) {
   FileName = FN;
 
+  
+  int commRank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
+  printf("OPEN %s %d \n", const_cast<char *>(FileName.c_str()), commRank);
+
   int amode = ForReading ? MPI_MODE_RDONLY : (MPI_MODE_WRONLY | MPI_MODE_CREATE);
   if (MPI_File_open(Comm, const_cast<char *>(FileName.c_str()), amode,
                     MPI_INFO_NULL, &FH) != MPI_SUCCESS)
@@ -117,6 +122,10 @@ void GenericFileIO_MPI::read(void *buf, size_t count, off_t offset,
 
 void GenericFileIO_MPI::write(const void *buf, size_t count, off_t offset,
                               const std::string &D) {
+  
+  int commRank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
+  //printf("RANK: %lu MPI_File_write_at %ld \n", commRank, count);
   while (count > 0) {
     MPI_Status status;
     if (MPI_File_write_at(FH, offset, (void *) buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
@@ -223,6 +232,9 @@ void GenericFileIO_POSIX::write(const void *buf, size_t count, off_t offset,
   while (count > 0) {
     ssize_t scount;
     errno = 0;
+    pid_t pid = getpid();
+
+    // printf("pid: %lu pwrite \n", pid);
     if ((scount = pwrite(FH, buf, count, offset)) == -1) {
       if (errno == EINTR)
         continue;
@@ -392,6 +404,8 @@ void GenericIO::write() {
   MPI_Comm_rank(SplitComm, &SplitRank);
   MPI_Comm_size(SplitComm, &SplitNRanks);
 
+  //  printf("NUMBER %d %d\n",SplitRank, SplitNRanks);
+
   string LocalFileName;
   if (SplitNRanks != NRanks) {
     if (Rank == 0) {
@@ -438,7 +452,7 @@ void GenericIO::write() {
     } else {
       MPI_Gather(&Partition, 1, MPI_INT, 0, 0, MPI_INT, 0, Comm);
     }
-
+    //cout << FileName << endl;
     stringstream ss;
     ss << FileName << "#" << Partition;
     LocalFileName = ss.str();
@@ -544,6 +558,7 @@ nocomp:
   double StartTime = MPI_Wtime();
 
   if (SplitRank == 0) {
+    //  printf("inside split rank %d %d\n",SplitRank, SplitNRanks);
     uint64_t HeaderSize = sizeof(GlobalHeader<IsBigEndian>) + Vars.size()*sizeof(VariableHeader<IsBigEndian>) +
                           SplitNRanks*sizeof(RankHeader<IsBigEndian>) + CRCSize;
     if (NeedsBlockHeaders)
@@ -1663,13 +1678,13 @@ void GenericIO::setNaturalDefaultPartition() {
   DefaultPartition = MPIX_IO_link_id();
 #else
 #ifndef GENERICIO_NO_MPI
-  bool UseName = true;
+  bool UseName = false; // MSB true;
   const char *EnvStr = getenv("GENERICIO_PARTITIONS_USE_NAME");
   if (EnvStr) {
     int Mod = atoi(EnvStr);
     UseName = (Mod != 0);
   }
-
+  
   if (UseName) {
     // This is a heuristic to generate ~256 partitions based on the
     // names of the nodes.
@@ -1680,7 +1695,6 @@ void GenericIO::setNaturalDefaultPartition() {
     unsigned char color = 0;
     for (int i = 0; i < Len; ++i)
       color += (unsigned char) Name[i];
-
     DefaultPartition = color;
   }
 
@@ -1689,9 +1703,17 @@ void GenericIO::setNaturalDefaultPartition() {
   if (EnvStr) {
     int Mod = atoi(EnvStr);
     if (Mod > 0) {
-      int Rank;
+      int NRanks, Rank;
       MPI_Comm_rank(MPI_COMM_WORLD, &Rank);
-      DefaultPartition += Rank % Mod;
+      MPI_Comm_size(MPI_COMM_WORLD, &NRanks);
+      int block = NRanks/Mod;
+      
+      DefaultPartition = Rank/block;
+
+      //int Rank;
+      //MPI_Comm_rank(MPI_COMM_WORLD, &Rank); 
+      //DefaultPartition += Rank % Mod;
+      printf("DefaultPartition %d %d \n",DefaultPartition,Rank);
     }
   }
 #endif
