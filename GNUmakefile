@@ -41,10 +41,8 @@ CC = mpicc
 CXX = mpicxx
 MPICC = mpicc
 MPICXX = mpicxx
-HDF_DIR = $(HOME)/Sandbox/HDF5/BUILDS/1.13.0
-HDF_BUILD = $(HOME)/Sandbox/HDF5/GITHUB/SUBFILING/hdf5/build/bin
+HDF_DIR = $(HOME)/packages/hdf5/build/hdf5
 
-#HDF_DIR = $(HOME)/packages/hdf5/build/hdf5
 #HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
 #HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build.edison/hdf5
 #HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build/hdf5
@@ -72,16 +70,12 @@ endif
 ifeq ($(HOST), jelly)
    FE_CFLAGS = -fPIC
 endif
-ifeq ($(HOST), rawlinux.local)
-   FE_CFLAGS = -fPIC
-endif
 
 DEF = -DGENERICIO_HAVE_HDF
 
 ifeq ($(DEF),-DGENERICIO_HAVE_HDF)
 #HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -L$(ZLIB_DIR) -lz
-#HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -ldl
-HDF_LIB = -L$(HDF_BUILD) -lhdf5_debug -ldl
+HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -ldl
 HDF_INC = -I$(HDF_DIR)/include
 endif
 LIB = $(HDF_LIB) #-lirc
