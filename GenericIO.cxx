@@ -235,7 +235,7 @@ size_t GenericFileIO_HDF::get_NumElem() {
   return this->NumElem;
 }
 
-  void GenericFileIO_HDF::open(const std::string &FN, bool ForReading) {
+void GenericFileIO_HDF::open(const std::string &FN, bool ForReading) {
   hid_t fid, space, dset, attr, atype, gid, aid;	  // HDF5 file IDs
   hid_t fapl_id;  // File access templates
   hid_t fcpl_id;
@@ -338,8 +338,6 @@ size_t GenericFileIO_HDF::get_NumElem() {
       NumElem +=1;
 
   }
-
-  //  cout << "done open" << endl;
 }
 
 void GenericFileIO_HDF::setSize(size_t sz) {
@@ -430,9 +428,6 @@ void GenericFileIO_HDF::write_hdf_internal(const void *buf, size_t count, uint64
   adims[0] = (hsize_t)commRanks;
   dims[0] = (hsize_t)Totnumel;
  
-
-  // cout << "inside hdf_write" << endl;
-
   // --------------------------
   // Define the dimensions of the overall datasets
   // and create the dataset
@@ -447,7 +442,7 @@ void GenericFileIO_HDF::write_hdf_internal(const void *buf, size_t count, uint64
 
 
 #ifndef HDF5_HAVE_MULTI_DATASETS
-
+  
 #ifdef HDF5_COMPRESSION
   hid_t dset_creation_plist;
   hsize_t chunk_dims1[1];
@@ -501,7 +496,8 @@ void GenericFileIO_HDF::write_hdf_internal(const void *buf, size_t count, uint64
   ret = H5Dwrite(dataset, dtype, mem_dataspace, file_dataspace,
   		 plist_id, (void *)buf);
   
-#else
+#else  /* MULTI_DATASETS */
+  cout << "MULTI_DATASETS" << end;
   multi_info[i].mem_type_id = dtype;
   if( (multi_info[i].dset_id = H5Dcreate2(gid, c_str,  multi_info[i].mem_type_id, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT)) < 0)
     throw runtime_error( "Unable to create HDF5 dataset " );
@@ -567,6 +563,7 @@ void GenericFileIO_HDF::write_hdf_internal(const void *buf, size_t count, uint64
   //
 
 #if 1
+
   file_dataspace = H5Screate(H5S_SCALAR);
   dataset = H5Dcreate2(gid, c_str3, H5T_NATIVE_ULONG, file_dataspace,
 			H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
@@ -870,7 +867,6 @@ void GenericIO::write_hdf() {
   if (FileIOType == FileIOHDF) {// Can remove this line later
     gfio_hdf = dynamic_cast<GenericFileIO_HDF *> (FH.get());
     fid = gfio_hdf->get_fileid();
-
     filetype = H5Tcopy (H5T_C_S1);
     ret = H5Tset_size (filetype, H5T_VARIABLE);
 
@@ -1156,6 +1152,7 @@ void GenericIO::write_hdf() {
 
 
 #ifdef HDF5_HAVE_MULTI_DATASETS
+
   if (FileIOType == FileIOHDF) {
     hid_t plist_id;
     plist_id = H5Pcreate(H5P_DATASET_XFER);
@@ -1206,27 +1203,29 @@ void GenericIO::write_hdf() {
     ret = H5Gclose(gid);
 
   // Here we want to set the 
+  // cout << "Closing up file(s)" << endl;
   close();
   //MPI_Barrier(Comm);
 
   double EndTime = MPI_Wtime();
   double TotalTime = EndTime - StartTime;
   double MaxTotalTime;
+
   MPI_Reduce(&TotalTime, &MaxTotalTime, 1, MPI_DOUBLE, MPI_MAX, 0, Comm);
 
   hid_t fid2 = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
 
   if (Rank == 0) {
     // Obtain file size, this is just for benchmarking purpose.We can set the file size to genericIO by using H5Fgetsize.
-	// hid_t fid = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
+
     if(fid2 <0)
         throw runtime_error( ("Unable to open the file: ") + FileName);
+
     hsize_t h5_filesize=0;
     if(H5Fget_filesize(fid2,&h5_filesize)<0) {
         H5Fclose(fid2);
         throw runtime_error( ("Unable to obtain the HDF5 file size: ") + FileName);
     }
-    H5Fclose(fid);
     //#if defined(HDF5_DERV) || defined(HDF5_HAVE_MULTI_DATASETS)        
     printf("%s WRITE DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", FORMAT_TYPE, mean/NRanks, min, max,
 	   (double)h5_filesize/(mean/NRanks) / (1024.*1024.), 
@@ -1627,12 +1626,6 @@ nocomp:
     cout << NRanks << " Wrote " << FORMAT_TYPE  << Vars.size() << " variables to " << FileName <<
             " (" << FileSize << " bytes) in " << MaxTotalTime << "s: " <<
             Rate << " MB/s" << endl;
-
-    ofstream file;
-    file.open ("rate", ios::out | ios::trunc);
-    file << Rate << endl;
-    file.close();
-
   }
 
   MPI_Comm_free(&SplitComm);
