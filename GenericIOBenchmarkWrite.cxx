@@ -93,7 +93,9 @@ struct Generator<pos_t> {
 };
 
 int main(int argc, char *argv[]) {
-  MPI_Init(&argc, &argv);
+  int mpi_provides, require = MPI_THREAD_MULTIPLE;
+  MPI_Init_thread(&argc, &argv, require, &mpi_provides);
+  // MPI_Init(&argc, &argv);
 
   int commRank, commRanks;
   MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
