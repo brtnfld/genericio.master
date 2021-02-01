@@ -1214,14 +1214,16 @@ void GenericIO::write_hdf() {
   double MaxTotalTime;
   MPI_Reduce(&TotalTime, &MaxTotalTime, 1, MPI_DOUBLE, MPI_MAX, 0, Comm);
 
+  hid_t fid2 = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
+
   if (Rank == 0) {
     // Obtain file size, this is just for benchmarking purpose.We can set the file size to genericIO by using H5Fgetsize.
-    hid_t fid = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
-    if(fid <0)
+	// hid_t fid = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
+    if(fid2 <0)
         throw runtime_error( ("Unable to open the file: ") + FileName);
     hsize_t h5_filesize=0;
-    if(H5Fget_filesize(fid,&h5_filesize)<0) {
-        H5Fclose(fid);
+    if(H5Fget_filesize(fid2,&h5_filesize)<0) {
+        H5Fclose(fid2);
         throw runtime_error( ("Unable to obtain the HDF5 file size: ") + FileName);
     }
     H5Fclose(fid);
@@ -1236,7 +1238,7 @@ void GenericIO::write_hdf() {
             " (" << h5_filesize << " bytes) in " << MaxTotalTime << "s: " <<
             Rate << " MB/s" << endl;
   }
-
+  H5Fclose(fid2);
 
   return;
 }
