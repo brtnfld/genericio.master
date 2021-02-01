@@ -1625,6 +1625,12 @@ nocomp:
     cout << NRanks << " Wrote " << FORMAT_TYPE  << Vars.size() << " variables to " << FileName <<
             " (" << FileSize << " bytes) in " << MaxTotalTime << "s: " <<
             Rate << " MB/s" << endl;
+
+    ofstream file;
+    file.open ("rate", ios::out | ios::trunc);
+    file << Rate << endl;
+    file.close();
+
   }
 
   MPI_Comm_free(&SplitComm);
