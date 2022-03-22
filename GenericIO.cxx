@@ -1226,9 +1226,11 @@ void GenericIO::write_hdf() {
   const char *EnvStr = getenv("HDF5_VOL_CONNECTOR");
 
   if (EnvStr != NULL) {
-    if (strstr(EnvStr, "daos")) {
-      cout << NRanks << " Wrote " << FORMAT_TYPE  << Vars.size() << " variables to " << FileName <<
-        " in " << MaxTotalTime << "s" << endl;
+    if (Rank == 0) {
+      if (strstr(EnvStr, "daos")) {
+        cout << NRanks << " Wrote " << FORMAT_TYPE  << Vars.size() << " variables to " << FileName <<
+          " in " << MaxTotalTime << "s" << endl;
+      }
     }
   } else {
     
