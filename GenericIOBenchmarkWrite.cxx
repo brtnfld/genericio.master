@@ -152,12 +152,18 @@ int main(int argc, char *argv[]) {
 
   unsigned Method = GenericIO::FileIOPOSIX;
   const char *EnvStr = getenv("GENERICIO_USE_MPIIO");
-  if (EnvStr && string(EnvStr) == "1")
+  if (EnvStr && string(EnvStr) == "1") {
     Method = GenericIO::FileIOMPI;
-  const char *EnvStr1 = getenv("GENERICIO_USE_HDF");
-  if (EnvStr1 && string(EnvStr1) == "1")
+  }
+  EnvStr = getenv("GENERICIO_USE_HDF");
+  if (EnvStr && string(EnvStr) == "1") {
     Method = GenericIO::FileIOHDF;
-
+  }
+  EnvStr = getenv("GENERICIO_USE_HDF_COMPOUND");
+  if (EnvStr && string(EnvStr) == "1") {
+    Method = GenericIO::FileIOHDF;
+  }
+  
   { // scope GIO
   GenericIO GIO(
     MPI_COMM_WORLD,

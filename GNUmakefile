@@ -42,8 +42,8 @@ CXX = mpicxx
 MPICC = mpicc
 MPICXX = mpicxx
 
-ifeq ($(HDF5_DIR), "")
-  HDF_DIR = $(HOME)/packages/hdf5/build/hdf5
+ifeq ($(HDF5_DIR),)
+  HDF5_DIR=$(HOME)/packages/hdf5/build/hdf5
 endif
 
 #ZLIB_DIR = $(HOME)/packages/zlib-1.2.8/zlib$(TYPE)/lib
@@ -62,12 +62,15 @@ endif
 DEF = -DGENERICIO_HAVE_HDF
 
 ifeq ($(DEF),-DGENERICIO_HAVE_HDF)
-#HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -L$(ZLIB_DIR) -lz
-HDF_LIB = -L$(HDF_DIR)/lib -lhdf5 -ldl
-HDF_INC = -I$(HDF_DIR)/include
-endif
-LIB = $(HDF_LIB) #-lirc
+#HDF_LIB = -L$(HDF5_DIR)/lib -lhdf5 -L$(ZLIB_DIR) -lz
+HDF_INC = -I$(HDF5_DIR)/include
+#HDF_LIB = $(shell if [ -d $$HDF5_DIR/lib ]; then echo "$$HDF5_DIR/lib"; else echo "$HDF5_DIR/lib64"; fi)
+#HDF_LIB = $(shell echo "LKDJFLKDJF $$HDF5_DIR/lib" )
+#HDF_LIB := $(shell if [ -d $$HDF5_DIR/lib ]; then echo "$$HDF5_DIR/lib"; else echo "$$HDF5_DIR/lib64"; fi)  #-lirc
+HDF_LIB = $(HDF5_DIR)/lib
+LIB = -L$(HDF_LIB) -lhdf5 -ldl
 INC = $(HDF_INC)
+endif
 
 all: fe-progs mpi-progs 
 sql: fe-sqlite
