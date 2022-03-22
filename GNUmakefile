@@ -41,34 +41,22 @@ CC = mpicc
 CXX = mpicxx
 MPICC = mpicc
 MPICXX = mpicxx
-HDF_DIR = $(HOME)/packages/hdf5/build/hdf5
 
-#HDF_DIR = $(HOME)/packages/hdf5/build_dev_parallel/hdf5
-#HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build.edison/hdf5
-#HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build/hdf5
-#HDF_DIR = /global/homes/b/brtnfld/packages/hdf5/build_1.8.12/hdf5
-#HDF_DIR =/global/homes/b/brtnfld/packages/hdf5/build_1.8/hdf5
+ifeq ($(HDF5_DIR), "")
+  HDF_DIR = $(HOME)/packages/hdf5/build/hdf5
+endif
+
 #ZLIB_DIR = $(HOME)/packages/zlib-1.2.8/zlib$(TYPE)/lib
 
 #TYPE=".intel"
 
+FE_CFLAGS = -fPIC
 HOST=$(shell uname -n | sed 's/[0-9]*//g')
 ifeq ($(HOST), cori)
-   FE_CFLAGS = -fPIC
    CC  = cc
    CXX = CC
    MPICC = cc
    MPICXX = CC
-endif
-ifeq ($(HOST), edison)
-   FE_CFLAGS = -fPIC
-   CC  = cc
-   CXX = CC
-   MPICC = cc
-   MPICXX = CC
-endif
-ifeq ($(HOST), jelly)
-   FE_CFLAGS = -fPIC
 endif
 
 DEF = -DGENERICIO_HAVE_HDF
