@@ -1226,6 +1226,8 @@ void GenericIO::write_hdf() {
 
   MPI_Reduce(&TotalTime, &MaxTotalTime, 1, MPI_DOUBLE, MPI_MAX, 0, Comm);
 
+  const char *EnvStr = getenv("HDF5_VOL_CONNECTOR");
+
   if (EnvStr != NULL) {
     if (Rank == 0) {
       if (strstr(EnvStr, "daos")) {
