@@ -1213,8 +1213,10 @@ void GenericIO::write_hdf() {
 
   MPI_Reduce(&TotalTime, &MaxTotalTime, 1, MPI_DOUBLE, MPI_MAX, 0, Comm);
 
-  cout << NRanks << " Procs " << FORMAT_TYPE << " Wrote " << Vars.size() << " variables to " << FileName <<
-    " in " << MaxTotalTime << "s: " << endl;
+  if (Rank == 0) {
+    cout << NRanks << " Procs " << FORMAT_TYPE << " Wrote " << Vars.size() << " variables to " << FileName <<
+      " in " << MaxTotalTime << "s: " << endl;
+  }
 
 #if 0
   hid_t fid2 = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
