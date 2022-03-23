@@ -3107,404 +3107,402 @@ void GenericIO::readDataHDF(int EffRank, bool PrintStats, bool CollStats) {
     //   mem_dataspace_CRC = H5Screate_simple (1, sizedims, NULL);
 
 
-   //#ifdef HDF5_DERV
-if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
-  if(Rank == 0)  {
-    rtimers = (double *) malloc(commRanks*sizeof(double));
-  }
-
-   t1 =  MPI_Wtime();
-   hid_t memtype;
-   dset = H5Dopen(fid, "/Variables/DATA", H5P_DEFAULT);
-   dtype = H5Dget_type(dset);
-   file_dataspace = H5Dget_space (dset);
-   H5Sget_simple_extent_dims(file_dataspace, dim_size, NULL);
-
-   uint64_t *Sendv = NULL;
-   if(Rank == 0)
-     Sendv = new uint64_t [commRanks*sizeof(uint64_t)];
-
-   MPI_Gather( &dims[0], 1, MPI_UINT64_T, Sendv, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); // fix comm MSB
-
-   uint64_t *sbufv;
-   sbufv = new uint64_t [commRanks*sizeof(uint64_t)];
-   
-   if(Rank == 0) {
-     sbufv[0] = 0;
-     int k;
-     for (k =0; k<commRanks; k++) {
-       // find offsets
-       if(k > 0)
-	 sbufv[k] = sbufv[k-1] + Sendv[k-1];
-       //	 cout << k << " : " << sbufv[k] << endl;
+   if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
+     if(Rank == 0)  {
+       rtimers = (double *) malloc(commRanks*sizeof(double));
      }
-     delete [] Sendv;
-   }
-
-   uint64_t Offsets;
-   MPI_Scatter( sbufv, 1, MPI_UINT64_T, &Offsets, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); 
-   delete [] sbufv;
-
-   start[0] =  Offsets;
-   hypercount[0] = dims[0];
-   stride[0] = 1;
-
-   //  cout << start[0] << endl;
-   //  cout <<  hypercount[0] << endl;
-
-   ret=H5Sselect_hyperslab(file_dataspace, H5S_SELECT_SET, start, stride,
-			   hypercount, NULL);
-
-   sizedims[0] = dims[0];
-
-   mem_dataspace = H5Screate_simple (1, sizedims, NULL);
-
-   Hdata = (hacc_t *) malloc (sizedims[0] * sizeof (hacc_t));
-   
-   if (!Hdata) cout << "NULLISH" << endl;
-
-   dxpl_id = H5Pcreate (H5P_DATASET_XFER);
-//     H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
-
-     //H5Pset_dxpl_checksum_ptr(dxpl_id, &read1_cs);
-
-   memtype = H5Tget_native_type(dtype, H5T_DIR_ASCEND);
-   
-   FileSize = H5Dget_storage_size(dset);
-   ret = H5Dread(dset, dtype, mem_dataspace, file_dataspace, dxpl_id, Hdata);
-
-   H5Pclose(dxpl_id);
-   ret = H5Sclose (mem_dataspace);
-   ret = H5Sclose (file_dataspace);
-   ret = H5Tclose (dtype);
-   ret = H5Dclose (dset);
-   timer = MPI_Wtime()-t1;
-
-#if 0
-   if(Rank == 0) {
-     for(size_t j = 0; j < dims[0]; ++j) {
-       cout << j << " " << Hdata[j].id << endl;
-     }
-   }
-#endif
-
-   dset_id = H5Dopen(fid, "Variables/CRC_id_mask_x_y_z_vx_vy_vz_phi", H5P_DEFAULT);
-
-   ret = H5Dread(dset_id, H5T_NATIVE_ULONG, H5S_ALL, H5S_ALL, H5P_DEFAULT, &CRCv);
-   //  cout << "var size " << Vars[i].Size << endl;
-
-      // CRC calculation 
-   crc send[9];
-      // send.CRC64_size = dims[0]*Vars[i].Size; // MSB not sure why it does not work
-
-   send[0].CRC64_size = dims[0]*sizeof(long);
-   send[1].CRC64_size = dims[0]*sizeof(uint16_t);
-   send[2].CRC64_size = dims[0]*sizeof(float);
-   send[3].CRC64_size = dims[0]*sizeof(float);
-   send[4].CRC64_size = dims[0]*sizeof(float);
-   send[5].CRC64_size = dims[0]*sizeof(float);
-   send[6].CRC64_size = dims[0]*sizeof(float);
-   send[7].CRC64_size = dims[0]*sizeof(float);
-   send[8].CRC64_size = dims[0]*sizeof(float);
-
-   void *field;
-   hsize_t ii;
-   field = (long *)malloc(dims[0]*sizeof(long));
-   for (ii=0; ii < dims[0]; ii++)
-     *((long *)field + ii) = Hdata[ii].id;
-   send[0].CRC64 = crc64_omp(field, send[0].CRC64_size);
-   free(field);
-   field = (uint16_t *)malloc(dims[0]*sizeof(uint16_t));
-   for (ii=0; ii < dims[0]; ii++)
-     *((uint16_t *)field + ii) = Hdata[ii].mask;
-   send[1].CRC64 = crc64_omp(field, send[1].CRC64_size);
-   free(field);
-   field = (float *)malloc(dims[0]*sizeof(float));
-   for (ii=0; ii < dims[0]; ii++)
-     *((float *)field + ii) = Hdata[ii].x;
-   send[2].CRC64 = crc64_omp(field, send[2].CRC64_size);
-   for (ii=0; ii < dims[0]; ii++)
-     *((float *)field + ii) = Hdata[ii].y;
-   send[3].CRC64 = crc64_omp(field, send[3].CRC64_size);
-   for (ii=0; ii < dims[0]; ii++)
-     *((float *)field + ii) = Hdata[ii].z;
-   send[4].CRC64 = crc64_omp(field, send[4].CRC64_size);
-   for (ii=0; ii < dims[0]; ii++)
-     *((float *)field + ii) = Hdata[ii].vx;
-   send[5].CRC64 = crc64_omp(field, send[5].CRC64_size);
-   for (ii=0; ii < dims[0]; ii++)
-     *((float *)field + ii) = Hdata[ii].vy;
-   send[6].CRC64 = crc64_omp(field, send[6].CRC64_size);
-   for (ii=0; ii < dims[0]; ii++)
-     *((float *)field + ii) = Hdata[ii].vz;
-   send[7].CRC64 = crc64_omp(field, send[7].CRC64_size);
-   for (ii=0; ii < dims[0]; ii++)
-     *((float *)field + ii) = Hdata[ii].phi;
-   send[8].CRC64 = crc64_omp(field, send[8].CRC64_size);
-   free(field);
-
-   struct crc_s *rbufv;
-      
-   int          blocklengths[2] = {1,1};
-   MPI_Datatype types[2] = {MPI_UINT64_T, MPI_LONG_LONG_INT };
-   MPI_Datatype mpi_crc_type;
-   MPI_Aint     offsets[2];
-      
-   offsets[0] = offsetof(crc, CRC64);
-   offsets[1] = offsetof(crc, CRC64_size);
-
-   MPI_Type_create_struct(2, blocklengths, offsets, types, &mpi_crc_type);
-   MPI_Type_commit(&mpi_crc_type);
-
-   rbufv = NULL;
-   if(Rank == 0)
-     rbufv = new crc_s [9*commRanks*sizeof(struct crc_s)];
-
-   MPI_Gather( &send[0], 9, mpi_crc_type, rbufv, 9, mpi_crc_type, 0, MPI_COMM_WORLD);
-
-   MPI_Type_free(&mpi_crc_type);
-
-   if(Rank == 0) {
-
-     int icnt,ii;
-     for (ii=0; ii < 9; ii++) {
-       icnt = ii;
-       uint64_t CRC_sum = 0;
-       for (int k=0; k<commRanks; k++) {
-	 CRC_sum = crc64_combine(CRC_sum, rbufv[icnt].CRC64, rbufv[icnt].CRC64_size);
-	 icnt += 9 ;
-       }
-       cout << "Checking CRC for Dataset " << ii ;
-       if (CRCv[ii] != CRC_sum || CRC_sum == 0) {
-	 cout << red <<  " CRC FAILED " << nc << CRCv[ii] << " " << CRC_sum << endl;
-       } else {
-	 cout << green << " PASSED" << nc << endl;
-       }
-     }
-   }
-   free(rbufv);
-
-   free(Hdata);
-
-   MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-   if(Rank == 0)  {
      
-     min = rtimers[0];
-     max = min;
-     mean = min;
-     for(int n = 1; n < commRanks; n++) {
-       if(rtimers[n] > max)
-	 max=rtimers[n];
-       mean += rtimers[n];
-       if(rtimers[n] < min)
-	 min=rtimers[n];
-     }
-     free(rtimers);
-   }
-  if (Rank == 0) {
-    //  cout << FileSize << endl;
-    printf("%d %s READ DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", commRanks, FORMAT_TYPE, mean/commRanks, min, max,
-	   (double)FileSize/(mean/commRanks) / (1024.*1024.), 
-	   (double)FileSize/min/(1024.*1024.), (double)FileSize/max/(1024.*1024.) );
-  }
-
-  ret = H5Dclose(dset_id);
- } else {
-  //#else
-
-   mem_dataspace_CRC = H5Screate(H5S_SCALAR);
-
-   for (size_t i = 0; i < Vars.size(); ++i) {
-
-//     uint64_t Offset = RH->Start;
-     bool VarFound = false;
-
-     Vars[i].Name = v[i];
-     //cout << "var name " << Vars[i].Name << endl;
-     //  cout << "var size " << Vars[i].Size << endl;
-
-
-     std::strcpy(c_str, v[i].c_str());
-
-     // cout << c_str << endl;
-     // cout << fid << endl;
-     dset = H5Dopen(fid, c_str, H5P_DEFAULT);
-
+     t1 =  MPI_Wtime();
+     hid_t memtype;
+     dset = H5Dopen(fid, "/Variables/DATA", H5P_DEFAULT);
+     dtype = H5Dget_type(dset);
      file_dataspace = H5Dget_space (dset);
-
      H5Sget_simple_extent_dims(file_dataspace, dim_size, NULL);
-
-
-//      //     FH.get()->read(Data, ReadSize, Offset, Vars[i].Name);
      
      uint64_t *Sendv = NULL;
      if(Rank == 0)
        Sendv = new uint64_t [commRanks*sizeof(uint64_t)];
-
+     
      MPI_Gather( &dims[0], 1, MPI_UINT64_T, Sendv, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); // fix comm MSB
-
+     
      uint64_t *sbufv;
      sbufv = new uint64_t [commRanks*sizeof(uint64_t)];
-
+     
      if(Rank == 0) {
        sbufv[0] = 0;
        int k;
        for (k =0; k<commRanks; k++) {
-	 // find offsets
-	 if(k > 0)
-	   sbufv[k] = sbufv[k-1] + Sendv[k-1];
-	 //	 cout << k << " : " << sbufv[k] << endl;
+         // find offsets
+         if(k > 0)
+           sbufv[k] = sbufv[k-1] + Sendv[k-1];
+         //	 cout << k << " : " << sbufv[k] << endl;
        }
        delete [] Sendv;
      }
-
+     
      uint64_t Offsets;
      MPI_Scatter( sbufv, 1, MPI_UINT64_T, &Offsets, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); 
      delete [] sbufv;
-
+     
      start[0] =  Offsets;
      hypercount[0] = dims[0];
      stride[0] = 1;
-
+     
      //  cout << start[0] << endl;
      //  cout <<  hypercount[0] << endl;
-
+     
      ret=H5Sselect_hyperslab(file_dataspace, H5S_SELECT_SET, start, stride,
- 	    hypercount, NULL);
-
+                             hypercount, NULL);
+     
      sizedims[0] = dims[0];
-
+     
      mem_dataspace = H5Screate_simple (1, sizedims, NULL);
-
-     void *Data = Vars[i].Data;
-     if (!Data) cout << "NULLISH" << endl;
-
+     
+     Hdata = (hacc_t *) malloc (sizedims[0] * sizeof (hacc_t));
+     
+     if (!Hdata) cout << "NULLISH" << endl;
+     
      dxpl_id = H5Pcreate (H5P_DATASET_XFER);
-//     H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
+     //     H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
 
      //H5Pset_dxpl_checksum_ptr(dxpl_id, &read1_cs);
-
-     size_t Vsize;
-
-     //   if(Rank==0) printf("Reading Dataset  %s \n",c_str);
-     if( Vars[i].Name.compare("/Variables/id") == 0) {
-       dtype = H5T_NATIVE_LONG;
-       Vsize = sizeof(long);
-       Data = new long [dims[0]];
-     } else if( Vars[i].Name.compare("/Variables/mask") == 0) {
-       dtype = H5T_NATIVE_UINT16;
-       Vsize = 2;
-       Data = new short int [dims[0]];
-     } else  {
-       dtype = H5T_NATIVE_FLOAT;
-       Vsize = sizeof(float);
-       Data = new float [dims[0]];
-     }
-     ret = H5Dread(dset, dtype, mem_dataspace, file_dataspace, dxpl_id, Data);
-
-#if 0
-     if(Rank == 4) {
-    if(Vars[i].Name.compare("/Variables/id") == 0) {
-      for(size_t j = 0; j < dims[0]; ++j){
-	cout << j << " " << ((size_t *)Data)[j] << endl;
-      }
-    }
-     }
-#endif
-    
-    H5Pclose(dxpl_id);
+     
+     memtype = H5Tget_native_type(dtype, H5T_DIR_ASCEND);
+     
+     FileSize = H5Dget_storage_size(dset);
+     ret = H5Dread(dset, dtype, mem_dataspace, file_dataspace, dxpl_id, Hdata);
+     
+     H5Pclose(dxpl_id);
      ret = H5Sclose (mem_dataspace);
      ret = H5Sclose (file_dataspace);
+     ret = H5Tclose (dtype);
      ret = H5Dclose (dset);
-
-     std::strcpy(c_str3, c_str);
-     strcat(c_str3, "_CRC");
-
-     //  cout << "2H5Dread" << ret << endl;
-     //    if(Rank==0) printf("Reading in CRC for Dataset %s \n",c_str3);
-
-      //  cout << "2H5Dread" << ret << endl;
-
-#if 1
-      hid_t attr_id = H5Dopen(fid, c_str3, H5P_DEFAULT);
-      file_dataspace_CRC = H5Dget_space(attr_id);
-
-      ret = H5Dread(attr_id, H5T_NATIVE_ULONG, mem_dataspace_CRC, file_dataspace_CRC, H5P_DEFAULT, &CRCv);
-      //  cout << "var size " << Vars[i].Size << endl;
-
-      // CRC calculation 
-      crc send; 
-      // send.CRC64_size = dims[0]*Vars[i].Size; // MSB not sure why it does not work
-      send.CRC64_size = dims[0]*Vsize;
-      send.CRC64 = crc64_omp(Data, send.CRC64_size);
-
-      struct crc_s *rbufv;
-      
-      int          blocklengths[2] = {1,1};
-      MPI_Datatype types[2] = {MPI_UINT64_T, MPI_LONG_LONG_INT };
-      MPI_Datatype mpi_crc_type;
-      MPI_Aint     offsets[2];
-      
-      offsets[0] = offsetof(crc, CRC64);
-      offsets[1] = offsetof(crc, CRC64_size);
-
-      MPI_Type_create_struct(2, blocklengths, offsets, types, &mpi_crc_type);
-      MPI_Type_commit(&mpi_crc_type);
-
-      rbufv = NULL;
-      if(Rank == 0)
-	rbufv = new crc_s [commRanks*sizeof(struct crc_s)];
-
-      MPI_Gather( &send, 1, mpi_crc_type, rbufv, 1, mpi_crc_type, 0, MPI_COMM_WORLD);
-      
-      if(Rank == 0) {
-	uint64_t CRC_sum = 0;
-	for (int k=0; k<commRanks; k++) {
-	  CRC_sum = crc64_combine(CRC_sum, rbufv[k].CRC64, rbufv[k].CRC64_size);
-	}
-	cout << "Checking CRC for Dataset " << c_str3 ;
-	if (CRCv[0] != CRC_sum || CRC_sum == 0) {
-	  cout << red << " CRC FAILED " << nc << CRCv[0] << " " << CRC_sum << endl;
-	} else {
-	  cout << green << " PASSED" << nc << endl;
-	}
-	free(rbufv);
-      }
-      //     cout << CRCv << endl;
-
-//     if(Vars[i].Name.compare("/Variables/phi") == 0) {
-//       for(size_t j = 0; j < dims[0]; ++j){
-// 	cout << j << " " << ((float*)Data)[j] << endl;
-//       }
-//     }
-      //   CRC_loc = crc64_omp(Vars[i].Data, dims[0]);
-
-      ret = H5Dclose(attr_id);
-      ret = H5Sclose(file_dataspace_CRC);
-      
-   //    if(Rank==0) printf("Checking in CRC for Dataset %s ",c_str3);
-//       if (CRCv[0] != CRC_loc) {
-	
-//         cout << "CRC error " << CRCv[0] << " " << CRC_loc << endl;
-//       } else {
-	
-//       if(Rank==0) printf("PASSED \n",c_str3);
-//       }
-      MPI_Type_free(&mpi_crc_type);
+     timer = MPI_Wtime()-t1;
+     
+#if 0
+     if(Rank == 0) {
+       for(size_t j = 0; j < dims[0]; ++j) {
+         cout << j << " " << Hdata[j].id << endl;
+       }
+     }
 #endif
-      Data = NULL;
+     
+     dset_id = H5Dopen(fid, "Variables/CRC_id_mask_x_y_z_vx_vy_vz_phi", H5P_DEFAULT);
+     
+     ret = H5Dread(dset_id, H5T_NATIVE_ULONG, H5S_ALL, H5S_ALL, H5P_DEFAULT, &CRCv);
+     //  cout << "var size " << Vars[i].Size << endl;
+     
+     // CRC calculation 
+     crc send[9];
+     // send.CRC64_size = dims[0]*Vars[i].Size; // MSB not sure why it does not work
+     
+     send[0].CRC64_size = dims[0]*sizeof(long);
+     send[1].CRC64_size = dims[0]*sizeof(uint16_t);
+     send[2].CRC64_size = dims[0]*sizeof(float);
+     send[3].CRC64_size = dims[0]*sizeof(float);
+     send[4].CRC64_size = dims[0]*sizeof(float);
+     send[5].CRC64_size = dims[0]*sizeof(float);
+     send[6].CRC64_size = dims[0]*sizeof(float);
+     send[7].CRC64_size = dims[0]*sizeof(float);
+     send[8].CRC64_size = dims[0]*sizeof(float);
+     
+     void *field;
+     hsize_t ii;
+     field = (long *)malloc(dims[0]*sizeof(long));
+     for (ii=0; ii < dims[0]; ii++)
+       *((long *)field + ii) = Hdata[ii].id;
+     send[0].CRC64 = crc64_omp(field, send[0].CRC64_size);
+     free(field);
+     field = (uint16_t *)malloc(dims[0]*sizeof(uint16_t));
+     for (ii=0; ii < dims[0]; ii++)
+       *((uint16_t *)field + ii) = Hdata[ii].mask;
+     send[1].CRC64 = crc64_omp(field, send[1].CRC64_size);
+     free(field);
+     field = (float *)malloc(dims[0]*sizeof(float));
+     for (ii=0; ii < dims[0]; ii++)
+       *((float *)field + ii) = Hdata[ii].x;
+     send[2].CRC64 = crc64_omp(field, send[2].CRC64_size);
+     for (ii=0; ii < dims[0]; ii++)
+       *((float *)field + ii) = Hdata[ii].y;
+     send[3].CRC64 = crc64_omp(field, send[3].CRC64_size);
+     for (ii=0; ii < dims[0]; ii++)
+       *((float *)field + ii) = Hdata[ii].z;
+     send[4].CRC64 = crc64_omp(field, send[4].CRC64_size);
+     for (ii=0; ii < dims[0]; ii++)
+       *((float *)field + ii) = Hdata[ii].vx;
+     send[5].CRC64 = crc64_omp(field, send[5].CRC64_size);
+     for (ii=0; ii < dims[0]; ii++)
+       *((float *)field + ii) = Hdata[ii].vy;
+     send[6].CRC64 = crc64_omp(field, send[6].CRC64_size);
+     for (ii=0; ii < dims[0]; ii++)
+       *((float *)field + ii) = Hdata[ii].vz;
+     send[7].CRC64 = crc64_omp(field, send[7].CRC64_size);
+     for (ii=0; ii < dims[0]; ii++)
+       *((float *)field + ii) = Hdata[ii].phi;
+     send[8].CRC64 = crc64_omp(field, send[8].CRC64_size);
+     free(field);
+     
+     struct crc_s *rbufv;
+     
+     int          blocklengths[2] = {1,1};
+     MPI_Datatype types[2] = {MPI_UINT64_T, MPI_LONG_LONG_INT };
+     MPI_Datatype mpi_crc_type;
+     MPI_Aint     offsets[2];
+     
+     offsets[0] = offsetof(crc, CRC64);
+     offsets[1] = offsetof(crc, CRC64_size);
+     
+     MPI_Type_create_struct(2, blocklengths, offsets, types, &mpi_crc_type);
+     MPI_Type_commit(&mpi_crc_type);
+     
+     rbufv = NULL;
+     if(Rank == 0)
+       rbufv = new crc_s [9*commRanks*sizeof(struct crc_s)];
+     
+     MPI_Gather( &send[0], 9, mpi_crc_type, rbufv, 9, mpi_crc_type, 0, MPI_COMM_WORLD);
+     
+     MPI_Type_free(&mpi_crc_type);
+     
+     if(Rank == 0) {
+       
+       int icnt,ii;
+       for (ii=0; ii < 9; ii++) {
+         icnt = ii;
+         uint64_t CRC_sum = 0;
+         for (int k=0; k<commRanks; k++) {
+           CRC_sum = crc64_combine(CRC_sum, rbufv[icnt].CRC64, rbufv[icnt].CRC64_size);
+           icnt += 9 ;
+         }
+         cout << "Checking CRC for Dataset " << ii ;
+         if (CRCv[ii] != CRC_sum || CRC_sum == 0) {
+           cout << red <<  " CRC FAILED " << nc << CRCv[ii] << " " << CRC_sum << endl;
+         } else {
+           cout << green << " PASSED" << nc << endl;
+         }
+       }
+     }
+     free(rbufv);
+     
+     free(Hdata);
+     
+     MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+     if(Rank == 0)  {
+       
+       min = rtimers[0];
+       max = min;
+       mean = min;
+       for(int n = 1; n < commRanks; n++) {
+         if(rtimers[n] > max)
+           max=rtimers[n];
+         mean += rtimers[n];
+         if(rtimers[n] < min)
+           min=rtimers[n];
+       }
+       free(rtimers);
+     }
+     if (Rank == 0) {
+       //  cout << FileSize << endl;
+       printf("%d %s READ DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", commRanks, FORMAT_TYPE, mean/commRanks, min, max,
+              (double)FileSize/(mean/commRanks) / (1024.*1024.), 
+              (double)FileSize/min/(1024.*1024.), (double)FileSize/max/(1024.*1024.) );
+     }
+     
+     ret = H5Dclose(dset_id);
+   } else {
+
+     mem_dataspace_CRC = H5Screate(H5S_SCALAR);
+     
+     for (size_t i = 0; i < Vars.size(); ++i) {
+       
+       //     uint64_t Offset = RH->Start;
+       bool VarFound = false;
+       
+       Vars[i].Name = v[i];
+       //cout << "var name " << Vars[i].Name << endl;
+       //  cout << "var size " << Vars[i].Size << endl;
+       
+       
+       std::strcpy(c_str, v[i].c_str());
+       
+       // cout << c_str << endl;
+       // cout << fid << endl;
+       dset = H5Dopen(fid, c_str, H5P_DEFAULT);
+       
+       file_dataspace = H5Dget_space (dset);
+       
+       H5Sget_simple_extent_dims(file_dataspace, dim_size, NULL);
+       
+       
+       //      //     FH.get()->read(Data, ReadSize, Offset, Vars[i].Name);
+       
+       uint64_t *Sendv = NULL;
+       if(Rank == 0)
+         Sendv = new uint64_t [commRanks*sizeof(uint64_t)];
+       
+       MPI_Gather( &dims[0], 1, MPI_UINT64_T, Sendv, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); // fix comm MSB
+       
+       uint64_t *sbufv;
+       sbufv = new uint64_t [commRanks*sizeof(uint64_t)];
+       
+       if(Rank == 0) {
+         sbufv[0] = 0;
+         int k;
+         for (k =0; k<commRanks; k++) {
+           // find offsets
+           if(k > 0)
+             sbufv[k] = sbufv[k-1] + Sendv[k-1];
+           //	 cout << k << " : " << sbufv[k] << endl;
+         }
+         delete [] Sendv;
+       }
+       
+       uint64_t Offsets;
+       MPI_Scatter( sbufv, 1, MPI_UINT64_T, &Offsets, 1, MPI_UINT64_T, 0, MPI_COMM_WORLD); 
+       delete [] sbufv;
+       
+       start[0] =  Offsets;
+       hypercount[0] = dims[0];
+       stride[0] = 1;
+       
+       //  cout << start[0] << endl;
+       //  cout <<  hypercount[0] << endl;
+       
+       ret=H5Sselect_hyperslab(file_dataspace, H5S_SELECT_SET, start, stride,
+                               hypercount, NULL);
+       
+       sizedims[0] = dims[0];
+       
+       mem_dataspace = H5Screate_simple (1, sizedims, NULL);
+       
+       void *Data = Vars[i].Data;
+       if (!Data) cout << "NULLISH" << endl;
+       
+       dxpl_id = H5Pcreate (H5P_DATASET_XFER);
+       //     H5Pset_dxpl_mpio(dxpl_id, H5FD_MPIO_COLLECTIVE);
+       
+       //H5Pset_dxpl_checksum_ptr(dxpl_id, &read1_cs);
+       
+       size_t Vsize;
+       
+       //   if(Rank==0) printf("Reading Dataset  %s \n",c_str);
+       if( Vars[i].Name.compare("/Variables/id") == 0) {
+         dtype = H5T_NATIVE_LONG;
+         Vsize = sizeof(long);
+         Data = new long [dims[0]];
+       } else if( Vars[i].Name.compare("/Variables/mask") == 0) {
+         dtype = H5T_NATIVE_UINT16;
+         Vsize = 2;
+         Data = new short int [dims[0]];
+       } else  {
+         dtype = H5T_NATIVE_FLOAT;
+         Vsize = sizeof(float);
+         Data = new float [dims[0]];
+       }
+       ret = H5Dread(dset, dtype, mem_dataspace, file_dataspace, dxpl_id, Data);
+       
+#if 0
+       if(Rank == 4) {
+         if(Vars[i].Name.compare("/Variables/id") == 0) {
+           for(size_t j = 0; j < dims[0]; ++j){
+             cout << j << " " << ((size_t *)Data)[j] << endl;
+           }
+         }
+       }
+#endif
+       
+       H5Pclose(dxpl_id);
+       ret = H5Sclose (mem_dataspace);
+       ret = H5Sclose (file_dataspace);
+       ret = H5Dclose (dset);
+       
+       std::strcpy(c_str3, c_str);
+       strcat(c_str3, "_CRC");
+       
+       //  cout << "2H5Dread" << ret << endl;
+       //    if(Rank==0) printf("Reading in CRC for Dataset %s \n",c_str3);
+       
+       //  cout << "2H5Dread" << ret << endl;
+       
+#if 1
+       hid_t attr_id = H5Dopen(fid, c_str3, H5P_DEFAULT);
+       file_dataspace_CRC = H5Dget_space(attr_id);
+       
+       ret = H5Dread(attr_id, H5T_NATIVE_ULONG, mem_dataspace_CRC, file_dataspace_CRC, H5P_DEFAULT, &CRCv);
+       //  cout << "var size " << Vars[i].Size << endl;
+       
+       // CRC calculation 
+       crc send; 
+       // send.CRC64_size = dims[0]*Vars[i].Size; // MSB not sure why it does not work
+       send.CRC64_size = dims[0]*Vsize;
+       send.CRC64 = crc64_omp(Data, send.CRC64_size);
+       
+       struct crc_s *rbufv;
+       
+       int          blocklengths[2] = {1,1};
+       MPI_Datatype types[2] = {MPI_UINT64_T, MPI_LONG_LONG_INT };
+       MPI_Datatype mpi_crc_type;
+       MPI_Aint     offsets[2];
+       
+       offsets[0] = offsetof(crc, CRC64);
+       offsets[1] = offsetof(crc, CRC64_size);
+       
+       MPI_Type_create_struct(2, blocklengths, offsets, types, &mpi_crc_type);
+       MPI_Type_commit(&mpi_crc_type);
+       
+       rbufv = NULL;
+       if(Rank == 0)
+         rbufv = new crc_s [commRanks*sizeof(struct crc_s)];
+       
+       MPI_Gather( &send, 1, mpi_crc_type, rbufv, 1, mpi_crc_type, 0, MPI_COMM_WORLD);
+       
+       if(Rank == 0) {
+         uint64_t CRC_sum = 0;
+         for (int k=0; k<commRanks; k++) {
+           CRC_sum = crc64_combine(CRC_sum, rbufv[k].CRC64, rbufv[k].CRC64_size);
+         }
+         cout << "Checking CRC for Dataset " << c_str3 ;
+         if (CRCv[0] != CRC_sum || CRC_sum == 0) {
+           cout << red << " CRC FAILED " << nc << CRCv[0] << " " << CRC_sum << endl;
+         } else {
+           cout << green << " PASSED" << nc << endl;
+         }
+         free(rbufv);
+       }
+       //     cout << CRCv << endl;
+       
+       //     if(Vars[i].Name.compare("/Variables/phi") == 0) {
+       //       for(size_t j = 0; j < dims[0]; ++j){
+       // 	cout << j << " " << ((float*)Data)[j] << endl;
+       //       }
+       //     }
+       //   CRC_loc = crc64_omp(Vars[i].Data, dims[0]);
+       
+       ret = H5Dclose(attr_id);
+       ret = H5Sclose(file_dataspace_CRC);
+       
+       //    if(Rank==0) printf("Checking in CRC for Dataset %s ",c_str3);
+       //       if (CRCv[0] != CRC_loc) {
+       
+       //         cout << "CRC error " << CRCv[0] << " " << CRC_loc << endl;
+       //       } else {
+       
+       //       if(Rank==0) printf("PASSED \n",c_str3);
+       //       }
+       MPI_Type_free(&mpi_crc_type);
+#endif
+       Data = NULL;
+     }
+     
+     H5Sclose(mem_dataspace_CRC);
+     
+     //ret=H5Fclose(fid);
+     //MPI_Barrier(MPI_COMM_WORLD);
+     // cout << "after close" << endl;
+     
+     delete[] c_str;
+     delete[] c_str3;
+     
    }
-   
-   H5Sclose(mem_dataspace_CRC);
-
-   //ret=H5Fclose(fid);
-   //MPI_Barrier(MPI_COMM_WORLD);
-   // cout << "after close" << endl;
-
-   delete[] c_str;
-   delete[] c_str3;
-
- }
 }
 #endif
 
