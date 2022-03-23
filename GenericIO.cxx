@@ -2247,7 +2247,7 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
 #ifdef GENERICIO_HAVE_HDF
 
 //#ifdef HDF5_DERV
-if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
+if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
   if (FileIOType == FileIOHDF) {
    /*
      * Create dataspace.  Setting maximum size to NULL sets the maximum
@@ -2313,7 +2313,7 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
     
     timer += MPI_Wtime()-t1;
   }
-}
+ }
 //#endif
 
 
