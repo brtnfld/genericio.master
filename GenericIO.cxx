@@ -1659,6 +1659,12 @@ nocomp:
 //#endif //if 0
 // Still keep the old code in case we need to check. 
 // Uncomment or comment this line for debugging
+//  _   _ _   _ _   _ _____ ___________ _ _ 
+// | | | | \ | | | | /  ___|  ___|  _  \ | |
+// | | | |  \| | | | \ `--.| |__ | | | | | |
+// | | | | . ` | | | |`--. \  __|| | | | | |
+// | |_| | |\  | |_| /\__/ / |___| |/ /|_|_|
+//  \___/\_| \_/\___/\____/\____/|___/ (_|_)
 #if 0
 // Note: writing errors are not currently recoverable (one rank may fail
 // while the others don't).
@@ -2388,6 +2394,13 @@ nocomp:
   SplitComm = MPI_COMM_NULL;
 }
 // Uncomment or comment this line for debugging
+//  _   _ _   _ _   _ _____ ___________ _ _ 
+// | | | | \ | | | | /  ___|  ___|  _  \ | |
+// | | | |  \| | | | \ `--.| |__ | | | | | |
+// | | | | . ` | | | |`--. \  __|| | | | | |
+// | |_| | |\  | |_| /\__/ / |___| |/ /|_|_|
+//  \___/\_| \_/\___/\____/\____/|___/ (_|_)
+//
 #endif // if 0 or NO MPI
 
 template <bool IsBigEndian>
