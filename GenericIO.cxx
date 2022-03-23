@@ -2113,7 +2113,6 @@ nocomp:
     if (HasExtraSpace)
       std::copy(CRCLoc, CRCLoc + CRCSize, CRCSave);
 
-
     if (HasExtraSpace) {
 #ifdef GENERICIO_HAVE_HDF
       if (FileIOType == FileIOHDF) {
@@ -2166,8 +2165,7 @@ nocomp:
 	delete sbufv;
 	MPI_Type_free(&mpi_crc_type);
 
-        if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
-  //#ifdef HDF5_DERV
+#ifdef HDF5_DERV
 	hsize_t ii;
 	if( Vars[i].Name.compare("id") == 0) {
 	  for (ii=0; ii < NElems; ii++)
@@ -2208,8 +2206,8 @@ nocomp:
 	  
 	}
 	Offsets_glb = Offsets;
-      } else {
-        //#else
+
+#else
 	if( Vars[i].Name.compare("id") == 0) {
 	  dtype = H5T_NATIVE_LONG;
 	} else if( Vars[i].Name.compare("mask") == 0) {
@@ -2219,8 +2217,7 @@ nocomp:
 	}
 	
 	gfio_hdf->write_hdf_internal(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem, i);
-      }
-      //#endif
+#endif
       } else 
 #endif
 	crc64_invert(CRC, CRCLoc);
@@ -2240,77 +2237,76 @@ nocomp:
 
     Offset += WriteSize + CRCSize;
   }
+
 #ifdef GENERICIO_HAVE_HDF
 
-//#ifdef HDF5_DERV
-if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
-  if (FileIOType == FileIOHDF) {
-   /*
-     * Create dataspace.  Setting maximum size to NULL sets the maximum
-     * size to be the current size.
-     */
-    hid_t filespace, memspace, dset, plist_id;
-    hsize_t     dims[1];
-    dims[0] = (hsize_t)TotElem;
-    filespace = H5Screate_simple (1, dims, NULL);
-
-    /*
-     * Create the dataset and write the compound data to it.
-     */
-    dset = H5Dcreate (gid, "DATA", Hmemtype, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-
-    hsize_t count[1];	          /* hyperslab selection parameters */
-    hsize_t offset[1];
-    herr_t status;
-    count[0] = NElems;
-    memspace = H5Screate_simple(1, count, NULL);
-
-    offset[0] = Offsets_glb;
-
-    H5Sselect_hyperslab(filespace, H5S_SELECT_SET, offset, NULL, count, NULL);
-
-    plist_id = H5Pcreate(H5P_DATASET_XFER);
-    //    H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
-
-    t1 = MPI_Wtime();
-    status = H5Dwrite (dset, Hmemtype, memspace, filespace, plist_id, Hdata);
-    timer = MPI_Wtime()-t1;
-
-    H5Pclose(plist_id);
-    status = H5Dclose (dset);
-    status = H5Sclose (filespace);
-    status = H5Sclose (memspace);
-    status = H5Tclose (Hmemtype);
-    free(Hdata);
-
-    // WRITE THE CRC data
-
-    hsize_t crc_dim[1] = {9};
-    file_dataspace = H5Screate(H5S_SIMPLE);
-    H5Sset_extent_simple(file_dataspace, 1, crc_dim, NULL);
-
-    hid_t dcpl = H5Pcreate (H5P_DATASET_CREATE);
-    status = H5Pset_layout (dcpl, H5D_COMPACT);
-
-    dataset = H5Dcreate2(gid, "CRC_id_mask_x_y_z_vx_vy_vz_phi", H5T_NATIVE_ULONG, file_dataspace,
-    			 H5P_DEFAULT, dcpl, H5P_DEFAULT);
-    H5Sclose (file_dataspace);
-    H5Pclose (dcpl);
-
-    t1 = MPI_Wtime();
-    if( Rank == 0 ) {
-      ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, H5S_ALL, H5S_ALL, H5P_DEFAULT, CRC_values);
-    } else {
-      mem_dataspace = H5Screate(H5S_NULL);
-      ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, mem_dataspace, H5P_DEFAULT, NULL);
-      H5Sclose (mem_dataspace);
+  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
+    if (FileIOType == FileIOHDF) {
+      /*
+       * Create dataspace.  Setting maximum size to NULL sets the maximum
+       * size to be the current size.
+       */
+      hid_t filespace, memspace, dset, plist_id;
+      hsize_t     dims[1];
+      dims[0] = (hsize_t)TotElem;
+      filespace = H5Screate_simple (1, dims, NULL);
+      
+      /*
+       * Create the dataset and write the compound data to it.
+       */
+      dset = H5Dcreate (gid, "DATA", Hmemtype, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+      
+      hsize_t count[1];	          /* hyperslab selection parameters */
+      hsize_t offset[1];
+      herr_t status;
+      count[0] = NElems;
+      memspace = H5Screate_simple(1, count, NULL);
+      
+      offset[0] = Offsets_glb;
+      
+      H5Sselect_hyperslab(filespace, H5S_SELECT_SET, offset, NULL, count, NULL);
+      
+      plist_id = H5Pcreate(H5P_DATASET_XFER);
+      //    H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+      
+      t1 = MPI_Wtime();
+      status = H5Dwrite (dset, Hmemtype, memspace, filespace, plist_id, Hdata);
+      timer = MPI_Wtime()-t1;
+      
+      H5Pclose(plist_id);
+      status = H5Dclose (dset);
+      status = H5Sclose (filespace);
+      status = H5Sclose (memspace);
+      status = H5Tclose (Hmemtype);
+      free(Hdata);
+      
+      // WRITE THE CRC data
+      
+      hsize_t crc_dim[1] = {9};
+      file_dataspace = H5Screate(H5S_SIMPLE);
+      H5Sset_extent_simple(file_dataspace, 1, crc_dim, NULL);
+      
+      hid_t dcpl = H5Pcreate (H5P_DATASET_CREATE);
+      status = H5Pset_layout (dcpl, H5D_COMPACT);
+      
+      dataset = H5Dcreate2(gid, "CRC_id_mask_x_y_z_vx_vy_vz_phi", H5T_NATIVE_ULONG, file_dataspace,
+                           H5P_DEFAULT, dcpl, H5P_DEFAULT);
+      H5Sclose (file_dataspace);
+      H5Pclose (dcpl);
+      
+      t1 = MPI_Wtime();
+      if( Rank == 0 ) {
+        ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, H5S_ALL, H5S_ALL, H5P_DEFAULT, CRC_values);
+      } else {
+        mem_dataspace = H5Screate(H5S_NULL);
+        ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, mem_dataspace, H5P_DEFAULT, NULL);
+        H5Sclose (mem_dataspace);
+      }
+      H5Dclose (dataset);
+      
+      timer += MPI_Wtime()-t1;
     }
-    H5Dclose (dataset);
-    
-    timer += MPI_Wtime()-t1;
   }
- }
-//#endif
 
 
 #ifdef HDF5_HAVE_MULTI_DATASETS
