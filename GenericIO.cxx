@@ -3024,7 +3024,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
   }
 }
 #ifdef GENERICIO_HAVE_HDF
-  void GenericIO::readDataHDF(int EffRank, bool PrintStats, bool CollStats) {
+void GenericIO::readDataHDF(int EffRank, bool PrintStats, bool CollStats) {
   int Rank, commRanks;
 
   std::vector<std::string> v;
@@ -3497,8 +3497,6 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
    
    H5Sclose(mem_dataspace_CRC);
 
-#endif
-   
    //ret=H5Fclose(fid);
    //MPI_Barrier(MPI_COMM_WORLD);
    // cout << "after close" << endl;
@@ -3506,9 +3504,9 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
    delete[] c_str;
    delete[] c_str3;
 
+ }
 }
-  }
-//#endif
+#endif
 
 void GenericIO::readData(int EffRank, size_t RowOffset, int Rank,
                          uint64_t &TotalReadSize, int NErrs[3]) {
