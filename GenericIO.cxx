@@ -1226,38 +1226,41 @@ void GenericIO::write_hdf() {
 
   MPI_Reduce(&TotalTime, &MaxTotalTime, 1, MPI_DOUBLE, MPI_MAX, 0, Comm);
 
-  if (Rank == 0) {
-    cout << NRanks << " Procs " << FORMAT_TYPE << " Wrote " << Vars.size() << " variables to " << FileName <<
-      " in " << MaxTotalTime << "s: " << endl;
-  }
+  if (EnvStr != NULL) {
+    if (Rank == 0) {
+      if (strstr(EnvStr, "daos")) {
+        cout << NRanks << " Wrote " << FORMAT_TYPE  << Vars.size() << " variables to " << FileName <<
+          " in " << MaxTotalTime << "s" << endl;
+      }
+    }
+  } else {
 
-#if 0
-  hid_t fid2 = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
+    hid_t fid2 = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
+    
+    if (Rank == 0) {
+      // Obtain file size, this is just for benchmarking purpose.We can set the file size to genericIO by using H5Fgetsize.
 
-  if (Rank == 0) {
-    // Obtain file size, this is just for benchmarking purpose.We can set the file size to genericIO by using H5Fgetsize.
-
-    if(fid2 <0)
+      if(fid2 <0)
         throw runtime_error( ("Unable to open the file: ") + FileName);
-
-    hsize_t h5_filesize=0;
-    if(H5Fget_filesize(fid2,&h5_filesize)<0) {
+      
+      hsize_t h5_filesize=0;
+      if(H5Fget_filesize(fid2,&h5_filesize)<0) {
         H5Fclose(fid2);
         throw runtime_error( ("Unable to obtain the HDF5 file size: ") + FileName);
+      }
+      //#if defined(HDF5_DERV) || defined(HDF5_HAVE_MULTI_DATASETS)        
+      printf("%s WRITE DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", FORMAT_TYPE, mean/NRanks, min, max,
+             (double)h5_filesize/(mean/NRanks) / (1024.*1024.), 
+             (double)h5_filesize/min/(1024.*1024.), (double)h5_filesize/max/(1024.*1024.) );
+      //#endif
+      
+      double Rate = ((double) h5_filesize) / MaxTotalTime / (1024.*1024.);
+      cout << NRanks << " Procs " << FORMAT_TYPE << " Wrote " << Vars.size() << " variables to " << FileName <<
+        " (" << h5_filesize << " bytes) in " << MaxTotalTime << "s: " <<
+        Rate << " MB/s" << endl;
     }
-    //#if defined(HDF5_DERV) || defined(HDF5_HAVE_MULTI_DATASETS)        
-    printf("%s WRITE DATA (mean,min,max) = %.4f %.4f %.4f s,  %.4f %.4f %.4f MB/s \n", FORMAT_TYPE, mean/NRanks, min, max,
-	   (double)h5_filesize/(mean/NRanks) / (1024.*1024.), 
-	   (double)h5_filesize/min/(1024.*1024.), (double)h5_filesize/max/(1024.*1024.) );
-    //#endif
-
-    double Rate = ((double) h5_filesize) / MaxTotalTime / (1024.*1024.);
-    cout << NRanks << " Procs " << FORMAT_TYPE << " Wrote " << Vars.size() << " variables to " << FileName <<
-            " (" << h5_filesize << " bytes) in " << MaxTotalTime << "s: " <<
-            Rate << " MB/s" << endl;
+    H5Fclose(fid2);
   }
-  H5Fclose(fid2);
-#endif
 
   return;
 }
