@@ -2070,8 +2070,8 @@ nocomp:
 
   }
 #endif
-
-#ifdef HDF5_DERV
+if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
+  //#ifdef HDF5_DERV
   Hdata = (hacc_t *) malloc (NElems * sizeof (hacc_t));
 
   Hmemtype = H5Tcreate (H5T_COMPOUND, sizeof (hacc_t));
@@ -2093,8 +2093,8 @@ nocomp:
 		      HOFFSET (hacc_t, vz), H5T_NATIVE_FLOAT);
   H5Tinsert (Hmemtype, "phi",
 		      HOFFSET (hacc_t, phi), H5T_NATIVE_FLOAT);
-
-#endif
+}
+  //#endif
 
   uint64_t Offsets_glb;
 	
