@@ -329,11 +329,13 @@ void GenericFileIO_HDF::open(const std::string &FN, bool ForReading) {
 
   if ( ForReading ) {
     // get size
-#ifdef HDF5_DERV
+    //#ifdef HDF5_DERV
+if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
     dset  = H5Dopen (fid, "/Variables/DATA", H5P_DEFAULT);
-#else
+else
+  //#else
     dset  = H5Dopen (fid, "/Variables/id", H5P_DEFAULT);
-#endif
+//#endif
     space = H5Dget_space (dset);
     ndims = H5Sget_simple_extent_dims (space, dims, NULL);
 
