@@ -2170,7 +2170,8 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
 	delete sbufv;
 	MPI_Type_free(&mpi_crc_type);
 
-#ifdef HDF5_DERV
+if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
+  //#ifdef HDF5_DERV
 	hsize_t ii;
 	if( Vars[i].Name.compare("id") == 0) {
 	  for (ii=0; ii < NElems; ii++)
@@ -2211,8 +2212,8 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
 	  
 	}
 	Offsets_glb = Offsets;
-
-#else
+      } else {
+        //#else
 	if( Vars[i].Name.compare("id") == 0) {
 	  dtype = H5T_NATIVE_LONG;
 	} else if( Vars[i].Name.compare("mask") == 0) {
@@ -2222,7 +2223,8 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
 	}
 	
 	gfio_hdf->write_hdf_internal(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, &CRC, gid, TotElem, i);
-#endif
+      }
+      //#endif
       } else 
 #endif
 	crc64_invert(CRC, CRCLoc);
