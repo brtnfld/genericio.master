@@ -329,7 +329,861 @@ void GenericFileIO_HDF::open(const std::string &FN, bool ForReading) {
 
   if ( ForReading ) {
     // get size
-    if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND"))
+    if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
+      dset  = H5Dopen (fid, "/Variables/DATA", H5P_DEFAULT);
+    else
+      dset  = H5Dopen (fid, "/Variables/id", H5P_DEFAULT);
+
+    space = H5Dget_space (dset);
+    ndims = H5Sget_simple_extent_dims (space, dims, NULL);
+
+    ret = H5Dclose (dset);
+    ret = H5Sclose (space);
+
+    int commRanks;
+    int Rank;
+    MPI_Comm_size(MPI_COMM_WORLD, &commRanks);
+    MPI_Comm_rank(MPI_COMM_WORLD, &Rank);    // MSB, why does comm not work?
+
+    NumElem = dims[0]/commRanks;
+
+    if(Rank+1 <= dims[0]%commRanks)
+      NumElem +=1;
+
+  }
+}
+
+void GenericFileIO_HDF::setSize(size_t sz) {
+//   if (MPI_File_set_size(FH, sz) != MPI_SUCCESS)
+//     throw runtime_error("Unable to set size for file: " + FileName);
+}
+
+void GenericFileIO_HDF::read(void *buf, size_t count, off_t offset,
+                             const std::string &D) {
+  //  cout << "ERROR GenericFileIO_HDF::read" << endl;
+//   while (count > 0) {
+//     MPI_Status status;
+//     if (MPI_File_read_at(FH, offset, buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
+//       throw runtime_error("Unable to read " + D + " from file: " + FileName);
+
+//     int scount;
+//     (void) MPI_Get_count(&status, MPI_BYTE, &scount);
+
+//     count -= scount;
+//     buf = ((char *) buf) + scount;
+//     offset += scount;
+//   }
+}
+
+void GenericFileIO_HDF::read_hdf(void *buf, size_t count, off_t offset,
+				 const std::string &D, hid_t dtype, hsize_t numel) {
+
+  hid_t dataset,file_dataspace;
+  char *c_str = new char[D.length() + 1];
+  hsize_t dims[1]; // dataspace dim sizes
+  herr_t ret;
+  dims[0] = numel;
+
+  std::strcpy(c_str, D.c_str());
+
+  // open the dataset collectively
+  dataset = H5Dopen2(FH, c_str, H5P_DEFAULT); 
+
+  file_dataspace = H5Dget_space (dataset);
+
+  ret = H5Dread(dataset, dtype,  file_dataspace, file_dataspace,
+	    H5P_DEFAULT, buf);
+
+  // release dataspaceID
+  H5Sclose (file_dataspace);
+  // close dataset collectively
+  ret = H5Dclose(dataset);
+
+  cout << "read_hdf aborting" << endl;
+  abort();
+
+//   while (count > 0) {
+//     MPI_Status status;
+//     if (MPI_File_read_at(FH, offset, buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
+//       throw runtime_error("Unable to read " + D + " from file: " + FileName);
+
+//     int scount;
+//     (void) MPI_Get_count(&status, MPI_BYTE, &scount);
+
+//     count -= scount;
+//     buf = ((char *) buf) + scount;
+//     offset += scount;
+//   }
+}
+
+void GenericFileIO_HDF::write(const void *buf, size_t count, off_t offset,
+				   const std::string &D) {
+}
+
+void GenericFileIO_HDF::write_hdf_internal(const void *buf, size_t count, uint64_t offset,
+				  const std::string &D, hid_t dtype, hsize_t numel, hsize_t chunk_size,const void *CRC, hid_t gid, uint64_t Totnumel, size_t i) {
+
+  hid_t sid, dataset,file_dataspace, aid, mem_dataspace, attr, fid, aspace;
+  
+  hsize_t dims[1]; // dataspace dim sizes
+  herr_t ret;
+  char *c_str = new char[D.length() + 1];
+  char *c_str3 = new char[D.length() + 5];
+  hsize_t adim[1];
+  hsize_t start[1];			/* for hyperslab setting */
+  hsize_t hypercount[1], stride[1];	/* for hyperslab setting */
+  hsize_t sizedims[1], adims[1];
+  int commRank, commRanks;
+  double t1, timer;
+  MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
+  MPI_Comm_size(MPI_COMM_WORLD, &commRanks); 
+
+  adims[0] = (hsize_t)commRanks;
+  dims[0] = (hsize_t)Totnumel;
+ 
+  // --------------------------
+  // Define the dimensions of the overall datasets
+  // and create the dataset
+  // -------------------------
+  // setup dimensionality object
+
+  std::strcpy(c_str, D.c_str());
+
+
+  if( (sid = H5Screate_simple (1, dims, NULL)) < 0)
+      throw runtime_error( "Unable to create HDF5 space: " );
+
+
+#ifndef HDF5_HAVE_MULTI_DATASETS
+  
+#ifdef HDF5_COMPRESSION
+  hid_t dset_creation_plist;
+  hsize_t chunk_dims1[1];
+  chunk_dims1[0] = chunk_size; 
+  dset_creation_plist = H5Pcreate(H5P_DATASET_CREATE);
+
+  H5Pset_chunk(dset_creation_plist,1,chunk_dims1);
+
+  H5Pset_deflate(dset_creation_plist,6);
+ 
+  if( (dataset = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, dset_creation_plist, H5P_DEFAULT)) < 0)
+    throw runtime_error( "Unable to create HDF5 dataset " );
+  H5Pclose(dset_creation_plist);
+
+#else  
+  if( (dataset = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT)) < 0)
+    throw runtime_error( "Unable to create HDF5 dataset " );
+#endif
+
+  delete[] c_str;
+
+  std::strcpy(c_str3, D.c_str());
+  strcat(c_str3, "_CRC");
+ 
+  /* set up dimensions of the slab this process accesses */
+
+  start[0] = offset; // commRank*Totnumel/commRanks;
+
+  hypercount[0] = numel;
+
+  // cout << commRank << " " << start[0] << endl;
+  //cout << commRank << "count " << hypercount[0] << endl;
+
+  stride[0] = 1;
+
+  file_dataspace = H5Dget_space (dataset);
+   
+  ret=H5Sselect_hyperslab(file_dataspace, H5S_SELECT_SET, start, stride,
+			  hypercount, NULL);
+
+  mem_dataspace = H5Screate_simple (1, hypercount, NULL);
+
+  hid_t plist_id = H5Pcreate(H5P_DATASET_XFER);
+
+#ifdef HDF5_COMPRESSION
+ H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+#endif
+  // write data
+  t1 = MPI_Wtime();
+
+  ret = H5Dwrite(dataset, dtype, mem_dataspace, file_dataspace,
+  		 plist_id, (void *)buf);
+  
+#else  /* MULTI_DATASETS */
+  cout << "MULTI_DATASETS" << end;
+  multi_info[i].mem_type_id = dtype;
+  if( (multi_info[i].dset_id = H5Dcreate2(gid, c_str,  multi_info[i].mem_type_id, sid, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT)) < 0)
+    throw runtime_error( "Unable to create HDF5 dataset " );
+
+  delete[] c_str;
+
+  std::strcpy(c_str3, D.c_str());
+  strcat(c_str3, "_CRC");
+ 
+  /* set up dimensions of the slab this process accesses */
+
+  start[0] = offset; // commRank*Totnumel/commRanks;
+
+  hypercount[0] = numel;
+
+  // cout << commRank << " " << start[0] << endl;
+  //cout << commRank << "count " << hypercount[0] << endl;
+
+  stride[0] = 1;
+
+  multi_info[i].dset_space_id = H5Dget_space (multi_info[i].dset_id);
+   
+  ret=H5Sselect_hyperslab( multi_info[i].dset_space_id, H5S_SELECT_SET, start, stride,
+			  hypercount, NULL);
+
+  multi_info[i].mem_space_id = H5Screate_simple (1, hypercount, NULL);
+
+  multi_info[i].u.wbuf = buf;
+#endif
+
+  timer = MPI_Wtime()-t1;
+#if 0
+  double *rtimers=NULL;
+  if(commRank == 0)  {
+    H5D_mpio_actual_io_mode_t actual_io_mode;
+    H5Pget_mpio_actual_io_mode( plist_id, &actual_io_mode);
+    cout << " collective mode " << actual_io_mode << endl; 
+    rtimers = (double *) malloc(commRanks*sizeof(double));
+  }
+
+  MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+  if(commRank == 0)  {
+    double mean=0;
+    for(int n = 0; n < commRanks; n++) {
+      mean += rtimers[n];
+    }
+    printf("H5DRead = %.2f \n", mean/commRanks);
+    free(rtimers);
+  }
+#endif
+  // release dataspaceID
+#ifndef HDF5_HAVE_MULTI_DATASETS
+  H5Pclose (plist_id);
+  H5Sclose (file_dataspace);
+  H5Sclose (mem_dataspace);
+  ret=H5Dclose(dataset);
+#endif
+  H5Sclose (sid);
+
+  //
+  // Create the CRC dataset
+  //
+
+#if 1
+
+  file_dataspace = H5Screate(H5S_SCALAR);
+  dataset = H5Dcreate2(gid, c_str3, H5T_NATIVE_ULONG, file_dataspace,
+			H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+  delete[] c_str3;
+  if( commRank == 0 ) {
+    mem_dataspace = H5Screate(H5S_SCALAR);
+    ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, file_dataspace,
+		   H5P_DEFAULT, (void *)CRC);
+  } else {
+    mem_dataspace = H5Screate(H5S_NULL);
+    ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, mem_dataspace,
+		   H5P_DEFAULT, NULL);
+  }
+  H5Sclose (mem_dataspace);
+  H5Sclose (file_dataspace);
+  H5Dclose (dataset);
+#endif 
+}
+
+void GenericFileIO_HDFCollective::read(void *buf, size_t count, off_t offset,
+                             const std::string &D) {
+  int Continue = 0;
+  
+
+//   do {
+//     MPI_Status status;
+//     if (MPI_File_read_at_all(FH, offset, buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
+//       throw runtime_error("Unable to read " + D + " from file: " + FileName);
+
+//     int scount;
+//     (void) MPI_Get_count(&status, MPI_BYTE, &scount);
+
+//     count -= scount;
+//     buf = ((char *) buf) + scount;
+//     offset += scount;
+
+//     int NeedContinue = (count > 0);
+//     MPI_Allreduce(&NeedContinue, &Continue, 1, MPI_INT, MPI_SUM, Comm);
+//   } while (Continue);
+}
+
+void GenericFileIO_HDFCollective::write(const void *buf, size_t count, off_t offset,
+                              const std::string &D) {
+  int Continue = 0;
+
+  //  cout << "GenericFileIO_HDFCollective" << endl;
+
+//   do {
+//     MPI_Status status;
+//     if (MPI_File_write_at_all(FH, offset, (void *) buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
+//       throw runtime_error("Unable to write " + D + " to file: " + FileName);
+
+//     int scount;
+//     (void) MPI_Get_count(&status, MPI_BYTE, &scount);
+
+//     count -= scount;
+//     buf = ((char *) buf) + scount;
+//     offset += scount;
+
+//     int NeedContinue = (count > 0);
+//     MPI_Allreduce(&NeedContinue, &Continue, 1, MPI_INT, MPI_SUM, Comm);
+//   } while (Continue);
+}
+#endif
+
+GenericFileIO_POSIX::~GenericFileIO_POSIX() {
+  if (FH != -1) close(FH);
+}
+
+void GenericFileIO_POSIX::open(const std::string &FN, bool ForReading) {
+  FileName = FN;
+
+  int flags = ForReading ? O_RDONLY : (O_WRONLY | O_CREAT);
+  int mode = S_IRUSR | S_IWUSR | S_IRGRP;
+  errno = 0;
+  if ((FH = ::open(FileName.c_str(), flags, mode)) == -1)
+    throw runtime_error((!ForReading ? "Unable to create the file: " :
+                                       "Unable to open the file: ") +
+                        FileName + ": " + strerror(errno));
+}
+
+void GenericFileIO_POSIX::setSize(size_t sz) {
+  if (ftruncate(FH, sz) == -1)
+    throw runtime_error("Unable to set size for file: " + FileName);
+}
+
+void GenericFileIO_POSIX::read(void *buf, size_t count, off_t offset,
+                               const std::string &D) {
+  while (count > 0) {
+    ssize_t scount;
+    errno = 0;
+    if ((scount = pread(FH, buf, count, offset)) == -1) {
+      if (errno == EINTR)
+        continue;
+
+      throw runtime_error("Unable to read " + D + " from file: " + FileName +
+                          ": " + strerror(errno));
+    }
+
+    count -= scount;
+    buf = ((char *) buf) + scount;
+    offset += scount;
+  }
+}
+
+void GenericFileIO_POSIX::write(const void *buf, size_t count, off_t offset,
+                                const std::string &D) {
+  while (count > 0) {
+    ssize_t scount;
+    errno = 0;
+    if ((scount = pwrite(FH, buf, count, offset)) == -1) {
+      if (errno == EINTR)
+        continue;
+
+      throw runtime_error("Unable to write " + D + " to file: " + FileName +
+                          ": " + strerror(errno));
+    }
+
+    count -= scount;
+    buf = ((char *) buf) + scount;
+    offset += scount;
+  }
+}
+
+static bool isBigEndian() {
+  const uint32_t one = 1;
+  return !(*((char *)(&one)));
+}
+
+static void bswap(void *v, size_t s) {
+  char *p = (char *) v;
+  for (size_t i = 0; i < s/2; ++i)
+    std::swap(p[i], p[s - (i+1)]);
+}
+
+// Using #pragma pack here, instead of __attribute__((packed)) because xlc, at
+// least as of v12.1, won't take __attribute__((packed)) on non-POD and/or
+// templated types.
+#pragma pack(1)
+
+template <typename T, bool IsBigEndian>
+struct endian_specific_value {
+  operator T() const {
+    T rvalue = value;
+    if (IsBigEndian != isBigEndian())
+      bswap(&rvalue, sizeof(T));
+
+    return rvalue;
+  };
+
+  endian_specific_value &operator = (T nvalue) {
+    if (IsBigEndian != isBigEndian())
+      bswap(&nvalue, sizeof(T));
+
+    value = nvalue;
+    return *this;
+  }
+
+  endian_specific_value &operator += (T nvalue) {
+    *this = *this + nvalue;
+    return *this;
+  }
+
+  endian_specific_value &operator -= (T nvalue) {
+    *this = *this - nvalue;
+    return *this;
+  }
+
+private:
+  T value;
+};
+
+static const size_t CRCSize = 8;
+
+static const size_t MagicSize = 8;
+static const char *MagicBE = "HACC01B";
+static const char *MagicLE = "HACC01L";
+
+template <bool IsBigEndian>
+struct GlobalHeader {
+  char Magic[MagicSize];
+  endian_specific_value<uint64_t, IsBigEndian> HeaderSize;
+  endian_specific_value<uint64_t, IsBigEndian> NElems; // The global total
+  endian_specific_value<uint64_t, IsBigEndian> Dims[3];
+  endian_specific_value<uint64_t, IsBigEndian> NVars;
+  endian_specific_value<uint64_t, IsBigEndian> VarsSize;
+  endian_specific_value<uint64_t, IsBigEndian> VarsStart;
+  endian_specific_value<uint64_t, IsBigEndian> NRanks;
+  endian_specific_value<uint64_t, IsBigEndian> RanksSize;
+  endian_specific_value<uint64_t, IsBigEndian> RanksStart;
+  endian_specific_value<uint64_t, IsBigEndian> GlobalHeaderSize;
+  endian_specific_value<double,   IsBigEndian> PhysOrigin[3];
+  endian_specific_value<double,   IsBigEndian> PhysScale[3];
+  endian_specific_value<uint64_t, IsBigEndian> BlocksSize;
+  endian_specific_value<uint64_t, IsBigEndian> BlocksStart;
+};
+
+enum {
+  FloatValue          = (1 << 0),
+  SignedValue         = (1 << 1),
+  ValueIsPhysCoordX   = (1 << 2),
+  ValueIsPhysCoordY   = (1 << 3),
+  ValueIsPhysCoordZ   = (1 << 4),
+  ValueMaybePhysGhost = (1 << 5)
+};
+
+static const size_t NameSize = 256;
+template <bool IsBigEndian>
+struct VariableHeader {
+  char Name[NameSize];
+  endian_specific_value<uint64_t, IsBigEndian> Flags;
+  endian_specific_value<uint64_t, IsBigEndian> Size;
+  endian_specific_value<uint64_t, IsBigEndian> ElementSize;
+};
+
+template <bool IsBigEndian>
+struct RankHeader {
+  endian_specific_value<uint64_t, IsBigEndian> Coords[3];
+  endian_specific_value<uint64_t, IsBigEndian> NElems;
+  endian_specific_value<uint64_t, IsBigEndian> Start;
+  endian_specific_value<uint64_t, IsBigEndian> GlobalRank;
+};
+
+static const size_t FilterNameSize = 8;
+static const size_t MaxFilters = 4;
+template <bool IsBigEndian>
+struct BlockHeader {
+  char Filters[MaxFilters][FilterNameSize];
+  endian_specific_value<uint64_t, IsBigEndian> Start;
+  endian_specific_value<uint64_t, IsBigEndian> Size;
+};
+
+template <bool IsBigEndian>
+struct CompressHeader {
+  endian_specific_value<uint64_t, IsBigEndian> OrigCRC;
+};
+const char *CompressName = "BLOSC";
+
+#pragma pack()
+
+unsigned GenericIO::DefaultFileIOType = FileIOPOSIX;
+int GenericIO::DefaultPartition = 0;
+bool GenericIO::DefaultShouldCompress = false;
+
+#ifndef GENERICIO_NO_MPI
+std::size_t GenericIO::CollectiveMPIIOThreshold = 0;
+#endif
+
+static bool blosc_initialized = false;
+
+#ifndef GENERICIO_NO_MPI
+void GenericIO::write() {
+  if (isBigEndian())
+    write<true>();
+  else
+    write<false>();
+}
+
+void GenericIO::write_hdf() {
+
+  hid_t fid, space, dset, attr, filetype, atype, gid, aid, tid1, rid1, rid2, dxpl_id;
+  hid_t fapl_id;  // File access templates
+  hid_t sid, dataset;
+  hsize_t dims[1]; // dataspace dim sizes
+  hsize_t adim[1];
+  hsize_t start[1];
+  hsize_t start_CRC[1];			/* for hyperslab setting */
+  hsize_t hypercount[1], stride[1];	/* for hyperslab setting */
+  hsize_t sizedims[1], adims[1];
+
+  hid_t file_dataspace, mem_dataspace;
+  hid_t file_dataspace_CRC, mem_dataspace_CRC;
+  /* Groups */
+  hid_t  grp_l_id;
+  hid_t  grp_p_id;
+  hid_t  grp_s_id;
+  herr_t ret;
+  double timestep[1];
+  char notes[] = {"Important notes go here"};
+
+  uint64_t FileSize = 0;
+  hsize_t chunk_size = 0;
+
+  int NRanks, Rank;
+  MPI_Comm_rank(Comm, &Rank);
+  MPI_Comm_size(Comm, &NRanks);
+
+#ifdef __bgq__
+  MPI_Barrier(Comm);
+#endif
+
+
+  double StartTime = MPI_Wtime();
+
+  GenericFileIO_HDF *gfio_hdf;
+  // The communicator may be COMM_SELF for independent IO?
+  FH.get() = new GenericFileIO_HDF(MPI_COMM_WORLD);
+  FH.get()->open(FileName);
+
+  if (FileIOType == FileIOHDF) {// Can remove this line later
+    gfio_hdf = dynamic_cast<GenericFileIO_HDF *> (FH.get());
+    fid = gfio_hdf->get_fileid();
+    filetype = H5Tcopy (H5T_C_S1);
+    ret = H5Tset_size (filetype, H5T_VARIABLE);
+
+    // Create a header dataset containing file's metadata information
+
+    gid   = H5Gcreate2(fid, "Variables", H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+
+    //
+    // Create dataset with a null dataspace.
+    //
+    space = H5Screate (H5S_NULL);
+    
+    // Create dataspace.  Setting maximum size to NULL sets the maximum
+    // size to be the current size.
+    //
+    adim[0] = 1;
+    aid = H5Screate(H5S_SIMPLE);
+    ret = H5Sset_extent_simple(aid, 1, adim, NULL);
+    //
+    // Create the attribute 
+    //
+    timestep[0] = 123.123; 
+    attr = H5Acreate (gid, "Time step", H5T_NATIVE_DOUBLE, aid, H5P_DEFAULT, H5P_DEFAULT);
+    ret  = H5Awrite (attr, H5T_NATIVE_DOUBLE, timestep);
+    ret = H5Aclose (attr);
+    
+    ret = H5Sclose (aid);
+    
+    aid = H5Screate(H5S_SCALAR);
+    atype = H5Tcopy(H5T_C_S1);
+    H5Tset_size(atype, 23);
+    H5Tset_strpad(atype,H5T_STR_NULLTERM);
+    
+    attr = H5Acreate (gid, "Notes", atype, aid, H5P_DEFAULT, H5P_DEFAULT);
+    ret  = H5Awrite (attr, atype, notes);
+    ret  = H5Aclose (attr);
+    ret = H5Sclose (aid);
+    ret = H5Tclose (filetype);
+    ret = H5Gclose (gid);
+    
+    gid = H5Gopen2(fid, "Variables", H5P_DEFAULT);
+
+#ifdef HDF5_COMPRESSION
+    uint64_t max_nelms = 0;
+    MPI_Allreduce(&NElems, &max_nelms, 1, MPI_UINT64_T, MPI_MAX, MPI_COMM_WORLD);
+    //assert(((uint64_t)((size_t)(max_nelms)) == max_nelms);
+    chunk_size = (hsize_t)max_nelms;
+
+#endif
+  } // Can remove this line later
+typedef struct crc_s {
+  uint64_t CRC64;
+  size_t  CRC64_size;
+} crc;
+
+typedef struct {
+  int64_t id;
+  uint16_t mask;
+  float   x;
+  float   y;
+  float   z;
+  float   vx;
+  float   vy;
+  float   vz;;
+  float   phi;
+} hacc_t;
+hacc_t *Hdata;
+hid_t Hmemtype;
+hid_t Hfiletype;
+
+uint64_t CRC_values[9];
+
+//#define HDF5_COMPRESSION
+//#define HDF5_HAVE_MULTI_DATASETS
+#ifdef HDF5_HAVE_MULTI_DATASETS
+H5D_rw_multi_t multi_info[9];
+#endif
+
+#endif
+
+char red[] = { 0x1b, '[', '1', ';', '3', '1', 'm', 0 };
+char green[] = { 0x1b, '[', '1', ';', '3', '2', 'm', 0 };
+char nc[] = { 0x1b, '[', '0', ';', '3', '9', 'm', 0 };
+
+using namespace std;
+
+namespace gio {
+
+
+#ifndef GENERICIO_NO_MPI
+GenericFileIO_MPI::~GenericFileIO_MPI() {
+  (void) MPI_File_close(&FH);
+}
+
+void GenericFileIO_MPI::open(const std::string &FN, bool ForReading) {
+  FileName = FN;
+
+  int amode = ForReading ? MPI_MODE_RDONLY : (MPI_MODE_WRONLY | MPI_MODE_CREATE);
+  if (MPI_File_open(Comm, const_cast<char *>(FileName.c_str()), amode,
+                    MPI_INFO_NULL, &FH) != MPI_SUCCESS)
+    throw runtime_error((!ForReading ? "Unable to create the file: " :
+                                       "Unable to open the file: ") +
+                        FileName);
+}
+
+void GenericFileIO_MPI::setSize(size_t sz) {
+  if (MPI_File_set_size(FH, sz) != MPI_SUCCESS)
+    throw runtime_error("Unable to set size for file: " + FileName);
+}
+
+void GenericFileIO_MPI::read(void *buf, size_t count, off_t offset,
+                             const std::string &D) {
+  while (count > 0) {
+    MPI_Status status;
+    if (MPI_File_read_at(FH, offset, buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
+      throw runtime_error("Unable to read " + D + " from file: " + FileName);
+
+    int scount;
+    (void) MPI_Get_count(&status, MPI_BYTE, &scount);
+
+    count -= scount;
+    buf = ((char *) buf) + scount;
+    offset += scount;
+  }
+}
+
+void GenericFileIO_MPI::write(const void *buf, size_t count, off_t offset,
+                              const std::string &D) {
+  while (count > 0) {
+    MPI_Status status;
+    if (MPI_File_write_at(FH, offset, (void *) buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
+      throw runtime_error("Unable to write " + D + " to file: " + FileName);
+
+    int scount = 0;
+    // On some systems, MPI_Get_count will not return zero even when count is zero.
+    if (count > 0)
+      (void) MPI_Get_count(&status, MPI_BYTE, &scount);
+
+    count -= scount;
+    buf = ((char *) buf) + scount;
+    offset += scount;
+  }
+}
+
+void GenericFileIO_MPICollective::read(void *buf, size_t count, off_t offset,
+                             const std::string &D) {
+  int Continue = 0;
+
+  do {
+    MPI_Status status;
+    if (MPI_File_read_at_all(FH, offset, buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
+      throw runtime_error("Unable to read " + D + " from file: " + FileName);
+
+    int scount = 0;
+    // On some systems, MPI_Get_count will not return zero even when count is zero.
+    if (count > 0)
+      (void) MPI_Get_count(&status, MPI_BYTE, &scount);
+
+    count -= scount;
+    buf = ((char *) buf) + scount;
+    offset += scount;
+
+    int NeedContinue = (count > 0);
+    MPI_Allreduce(&NeedContinue, &Continue, 1, MPI_INT, MPI_SUM, Comm);
+  } while (Continue);
+}
+
+void GenericFileIO_MPICollective::write(const void *buf, size_t count, off_t offset,
+                              const std::string &D) {
+  int Continue = 0;
+
+  do {
+    MPI_Status status;
+    if (MPI_File_write_at_all(FH, offset, (void *) buf, count, MPI_BYTE, &status) != MPI_SUCCESS)
+      throw runtime_error("Unable to write " + D + " to file: " + FileName);
+
+    int scount = 0;
+    // On some systems, MPI_Get_count will not return zero even when count is zero.
+    if (count > 0)
+      (void) MPI_Get_count(&status, MPI_BYTE, &scount);
+
+    count -= scount;
+    buf = ((char *) buf) + scount;
+    offset += scount;
+
+    int NeedContinue = (count > 0);
+    MPI_Allreduce(&NeedContinue, &Continue, 1, MPI_INT, MPI_SUM, Comm);
+  } while (Continue);
+}
+#endif
+
+#ifdef GENERICIO_HAVE_HDF
+GenericFileIO_HDF::~GenericFileIO_HDF() {
+  herr_t ret;
+  const char *EnvStr = getenv("GENERICIO_USE_HDF");
+  if (EnvStr)
+    ret=H5Fclose(FH);
+}
+hid_t GenericFileIO_HDF::get_fileid() {
+  return this->FH;
+}
+
+size_t GenericFileIO_HDF::get_NumElem() {
+  return this->NumElem;
+}
+
+void GenericFileIO_HDF::open(const std::string &FN, bool ForReading) {
+  hid_t fid, space, dset, attr, atype, gid, aid;	  // HDF5 file IDs
+  hid_t fapl_id;  // File access templates
+  hid_t fcpl_id;
+  herr_t ret;     // Generic return value
+  hsize_t     dims[1], adim[1];
+  hsize_t     domainsize[1];
+  int ndims;
+  double timestep[1];
+  char notes[] = {"Important notes go here"};
+  const char *wdata[9]= {"pid", "mask", "phi", 
+		   "vx","vy","vz",
+		   "x","y","z"};
+  size_t NumEl;   
+  /* Groups */
+  hid_t  grp_l_id;
+  hid_t  grp_p_id;
+  hid_t  grp_s_id;
+  
+  /* Container Version & Read Contexts */
+  uint64_t version;
+  hid_t    rc_id1, rc_id2, rc_id3, rc_id4, rc_id5, rc_id;
+  
+  /* Transactions  */
+  int commRank;
+
+  const char *EnvStr = getenv("GENERICIO_USE_MPIIO");
+  if (EnvStr && string(EnvStr) == "1") {
+    strcpy(FORMAT_TYPE, "MPI IO");
+  }
+  EnvStr = getenv("GENERICIO_USE_HDF");
+  if (EnvStr && string(EnvStr) == "1") {
+    strcpy(FORMAT_TYPE, "HDF5");
+  }
+  EnvStr = getenv("GENERICIO_USE_HDF_COMPOUND");
+  if (EnvStr && string(EnvStr) == "1") {
+    strcpy(FORMAT_TYPE, "HDF5 COMPOUND");
+  }
+  if(FORMAT_TYPE[0] == '\0')
+    strcpy(FORMAT_TYPE, "MPI IO");
+
+
+  MPI_Comm_rank(Comm, &commRank);
+  //MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
+  FileName = FN;
+
+  MPI_Info info;
+  MPI_Info_create(&info);
+  MPI_Info_set(info, "cb_nodes","4");
+
+  // setup file access template with parallel IO access.
+  fapl_id = H5Pcreate (H5P_FILE_ACCESS);
+  //ret = H5Pset_fapl_mpiposix(fapl_id, Comm, 0); 
+  ret = H5Pset_fapl_mpio(fapl_id, Comm, info);
+  H5Pset_coll_metadata_write(fapl_id, 1);
+  H5Pset_all_coll_metadata_ops(fapl_id, 1);
+  H5Pset_libver_bounds(fapl_id, H5F_LIBVER_LATEST, H5F_LIBVER_LATEST);
+  H5Pset_fclose_degree(fapl_id,H5F_CLOSE_WEAK);
+  fcpl_id = H5Pcreate(H5P_FILE_CREATE);
+  H5Pset_file_space_strategy(fcpl_id, H5F_FSPACE_STRATEGY_FSM_AGGR, 1, (hsize_t)1);
+//  H5Pset_file_space_strategy(fcpl_id,H5F_FSPACE_STRATEGY_PAGE,0,(hsize_t)1);
+//  H5Pset_file_space_page_size(fcpl_id, (hsize_t)(2*1048576));
+#if 0 
+  H5AC_cache_config_t config;
+  H5Pget_mdc_config(fapl_id, &config); 
+  config.set_initial_size = 1;
+  config.initial_size = 8388608;
+  config.max_size = 12582912;
+  config.min_size = 6291456;
+  config.dirty_bytes_threshold = 12582912; 
+  H5Pset_mdc_config(fapl_id, &config);
+#endif   
+#if 0
+  H5Pset_coll_metadata_write(fapl_id, 1);
+  H5Pset_all_coll_metadata_ops(fapl_id, 1 );
+#endif
+  FileName = FN;
+
+
+  if ( ForReading) {
+    if( (fid = H5Fopen(const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,fapl_id)) < 0)
+      throw runtime_error( ("Unable to open the file: ") + FileName);
+  } else {
+    if( (fid = H5Fcreate(const_cast<char *>(FileName.c_str()),H5F_ACC_TRUNC,fcpl_id,fapl_id)) < 0)
+      throw runtime_error( ("Unable to create the file: ") + FileName);
+  }
+  /* Get read context */
+  MPI_Info_free(&info);  
+  FH=fid;
+
+  //  if( (fid = H5Fopen(const_cast<char *>(FileName.c_str()),H5F_ACC_RDWR,fapl_id)) < 0 ) {    
+  // Release file-access template
+  ret = H5Pclose(fapl_id);
+  ret = H5Pclose(fcpl_id);
+
+  if ( ForReading ) {
+    // get size
+    if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
       dset  = H5Dopen (fid, "/Variables/DATA", H5P_DEFAULT);
     else
       dset  = H5Dopen (fid, "/Variables/id", H5P_DEFAULT);
@@ -931,7 +1785,7 @@ void GenericIO::write_hdf() {
 #endif
   } // Can remove this line later
 
-  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND")) {
+  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0 ) {
     Hdata = (hacc_t *) malloc (NElems * sizeof (hacc_t));
 
     Hmemtype = H5Tcreate (H5T_COMPOUND, sizeof (hacc_t));
@@ -1018,7 +1872,7 @@ void GenericIO::write_hdf() {
           //  cout << "CRC_sum2 " << CRC << endl;
 	  Offsets_glb = Offsets;
 
-          if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND")) {
+          if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
             hsize_t ii;
             if( Vars[i].Name.compare("id") == 0) {
               for (ii=0; ii < NElems; ii++)
@@ -1071,7 +1925,7 @@ void GenericIO::write_hdf() {
     }
   }
 
-  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND")) {
+  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
     if (FileIOType == FileIOHDF) {
       /*
        * Create dataspace.  Setting maximum size to NULL sets the maximum
@@ -2069,7 +2923,7 @@ nocomp:
   }
 #endif
 
-  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND")) {
+  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
     Hdata = (hacc_t *) malloc (NElems * sizeof (hacc_t));
     
     Hmemtype = H5Tcreate (H5T_COMPOUND, sizeof (hacc_t));
@@ -2167,7 +3021,7 @@ nocomp:
 	delete sbufv;
 	MPI_Type_free(&mpi_crc_type);
 
-        if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND")) {
+        if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
           hsize_t ii;
           if( Vars[i].Name.compare("id") == 0) {
             for (ii=0; ii < NElems; ii++)
@@ -2239,7 +3093,7 @@ nocomp:
   }
 #ifdef GENERICIO_HAVE_HDF
 
-  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND")) {
+  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
     if (FileIOType == FileIOHDF) {
       /*
        * Create dataspace.  Setting maximum size to NULL sets the maximum
@@ -3105,7 +3959,7 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
    //sizedims[0] = 1;
     //   mem_dataspace_CRC = H5Screate_simple (1, sizedims, NULL);
 
-   if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND")) {
+   if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
 
      if(Rank == 0)  {
        rtimers = (double *) malloc(commRanks*sizeof(double));
