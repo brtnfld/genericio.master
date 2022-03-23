@@ -1018,7 +1018,8 @@ void GenericIO::write_hdf() {
           //  cout << "CRC_sum2 " << CRC << endl;
 	  Offsets_glb = Offsets;
 
-#ifdef HDF5_DERV
+          //#ifdef HDF5_DERV
+  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
 	  hsize_t ii;
 	  if( Vars[i].Name.compare("id") == 0) {
 	    for (ii=0; ii < NElems; ii++)
@@ -1057,8 +1058,8 @@ void GenericIO::write_hdf() {
 	      Hdata[ii].phi = *((float *)Data + ii);
 	    CRC_values[8] = CRC;
 	  }
-
-#else
+  }else {
+    //#else
 	  if( Vars[i].Name.compare("id") == 0) {
 	    dtype = H5T_NATIVE_LONG;
 	  } else if( Vars[i].Name.compare("mask") == 0) {
@@ -1068,7 +1069,8 @@ void GenericIO::write_hdf() {
 	  }
 	
 	  gfio_hdf->write_hdf_internal(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, chunk_size,&CRC, gid, TotElem, i);
-#endif
+  }
+  //#endif
     }
   }
 
