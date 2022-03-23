@@ -73,6 +73,8 @@ extern "C" {
 #define MPI_UINT64_T (sizeof(long) == 8 ? MPI_LONG : MPI_LONG_LONG)
 #endif
 
+char FORMAT_TYPE[16];
+
 //#define HDF5_COMPRESSION
 //#define HDF5_HAVE_MULTI_DATASETS
 #ifdef HDF5_HAVE_MULTI_DATASETS
@@ -86,7 +88,7 @@ char nc[] = { 0x1b, '[', '0', ';', '3', '9', 'm', 0 };
 // COMPOUND TYPE METHOD
 #ifdef GENERICIO_HAVE_HDF
 //#define HDF5_DERV
-#ifdef HDF5_DERV
+//#ifdef HDF5_DERV
 typedef struct {
   int64_t id;
   uint16_t mask;
@@ -103,15 +105,15 @@ hid_t Hmemtype;
 hid_t Hfiletype;
 
 uint64_t CRC_values[9];
-char FORMAT_TYPE[] = "HDF5_DERV";
-#else
+//char FORMAT_TYPE[] = "HDF5_DERV";
+//#else
 char FORMAT_TYPE[] = "HDF5";
-#endif
+//#endif
 
-#else
-char FORMAT_TYPE[] = "MPI IO";
+//#else
+//char FORMAT_TYPE[] = "MPI IO";
 
-#endif
+//#endif
 
 using namespace std;
 
@@ -260,6 +262,8 @@ void GenericFileIO_HDF::open(const std::string &FN, bool ForReading) {
   
   /* Transactions  */
   int commRank;
+
+  strcpy(FORMAT_TYPE, "HDF5");
 
   MPI_Comm_rank(Comm, &commRank);
   //MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
