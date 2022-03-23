@@ -3115,8 +3115,8 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
     //   mem_dataspace_CRC = H5Screate_simple (1, sizedims, NULL);
 
 
-#ifdef HDF5_DERV
-
+   //#ifdef HDF5_DERV
+if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
   if(Rank == 0)  {
     rtimers = (double *) malloc(commRanks*sizeof(double));
   }
@@ -3317,8 +3317,8 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
   }
 
   ret = H5Dclose(dset_id);
-
-#else
+ } else {
+  //#else
 
    mem_dataspace_CRC = H5Screate(H5S_SCALAR);
 
@@ -3515,7 +3515,8 @@ void GenericIO::readData(int EffRank, bool PrintStats, bool CollStats) {
    delete[] c_str3;
 
 }
-#endif
+  }
+//#endif
 
 void GenericIO::readData(int EffRank, size_t RowOffset, int Rank,
                          uint64_t &TotalReadSize, int NErrs[3]) {
