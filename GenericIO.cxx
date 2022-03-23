@@ -113,7 +113,7 @@ uint64_t CRC_values[9];
 //#else
 //char FORMAT_TYPE[] = "MPI IO";
 
-//#endif
+#endif
 
 using namespace std;
 
