@@ -931,31 +931,29 @@ void GenericIO::write_hdf() {
 #endif
   } // Can remove this line later
 
-
-#ifdef HDF5_DERV
-  Hdata = (hacc_t *) malloc (NElems * sizeof (hacc_t));
-
-  Hmemtype = H5Tcreate (H5T_COMPOUND, sizeof (hacc_t));
-  H5Tinsert (Hmemtype, "id",
-		      HOFFSET (hacc_t, id), H5T_NATIVE_LONG);
-  H5Tinsert (Hmemtype, "mask", 
-		      HOFFSET (hacc_t, mask), H5T_NATIVE_UINT16);
-  H5Tinsert (Hmemtype, "x",
-		      HOFFSET (hacc_t, x), H5T_NATIVE_FLOAT);
-  H5Tinsert (Hmemtype, "y",
-		      HOFFSET (hacc_t, y), H5T_NATIVE_FLOAT);
-  H5Tinsert (Hmemtype, "z",
-		      HOFFSET (hacc_t, z), H5T_NATIVE_FLOAT);
-  H5Tinsert (Hmemtype, "vx",
-		      HOFFSET (hacc_t, vx), H5T_NATIVE_FLOAT);
-  H5Tinsert (Hmemtype, "vy",
-		      HOFFSET (hacc_t, vy), H5T_NATIVE_FLOAT);
-  H5Tinsert (Hmemtype, "vz",
-		      HOFFSET (hacc_t, vz), H5T_NATIVE_FLOAT);
-  H5Tinsert (Hmemtype, "phi",
-		      HOFFSET (hacc_t, phi), H5T_NATIVE_FLOAT);
-
-#endif
+  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
+    Hdata = (hacc_t *) malloc (NElems * sizeof (hacc_t));
+    
+    Hmemtype = H5Tcreate (H5T_COMPOUND, sizeof (hacc_t));
+    H5Tinsert (Hmemtype, "id",
+               HOFFSET (hacc_t, id), H5T_NATIVE_LONG);
+    H5Tinsert (Hmemtype, "mask", 
+               HOFFSET (hacc_t, mask), H5T_NATIVE_UINT16);
+    H5Tinsert (Hmemtype, "x",
+               HOFFSET (hacc_t, x), H5T_NATIVE_FLOAT);
+    H5Tinsert (Hmemtype, "y",
+               HOFFSET (hacc_t, y), H5T_NATIVE_FLOAT);
+    H5Tinsert (Hmemtype, "z",
+               HOFFSET (hacc_t, z), H5T_NATIVE_FLOAT);
+    H5Tinsert (Hmemtype, "vx",
+               HOFFSET (hacc_t, vx), H5T_NATIVE_FLOAT);
+    H5Tinsert (Hmemtype, "vy",
+               HOFFSET (hacc_t, vy), H5T_NATIVE_FLOAT);
+    H5Tinsert (Hmemtype, "vz",
+               HOFFSET (hacc_t, vz), H5T_NATIVE_FLOAT);
+    H5Tinsert (Hmemtype, "phi",
+               HOFFSET (hacc_t, phi), H5T_NATIVE_FLOAT);
+  }
 
   uint64_t Offsets_glb;
 	
