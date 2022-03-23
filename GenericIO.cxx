@@ -1213,6 +1213,10 @@ void GenericIO::write_hdf() {
 
   MPI_Reduce(&TotalTime, &MaxTotalTime, 1, MPI_DOUBLE, MPI_MAX, 0, Comm);
 
+  cout << NRanks << " Procs " << FORMAT_TYPE << " Wrote " << Vars.size() << " variables to " << FileName <<
+    " (" << h5_filesize << " bytes) in " << MaxTotalTime << "s: " << endl;
+
+#if 0
   hid_t fid2 = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
 
   if (Rank == 0) {
@@ -1238,6 +1242,7 @@ void GenericIO::write_hdf() {
             Rate << " MB/s" << endl;
   }
   H5Fclose(fid2);
+#endif
 
   return;
 }
