@@ -1074,7 +1074,8 @@ void GenericIO::write_hdf() {
     }
   }
 
-#ifdef HDF5_DERV
+  //#ifdef HDF5_DERV
+if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
   if (FileIOType == FileIOHDF) {
    /*
      * Create dataspace.  Setting maximum size to NULL sets the maximum
@@ -1161,7 +1162,8 @@ void GenericIO::write_hdf() {
     
     timer += MPI_Wtime()-t1;
   }
-#endif
+ }
+//#endif
 
 
 #ifdef HDF5_HAVE_MULTI_DATASETS
