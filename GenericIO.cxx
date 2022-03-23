@@ -75,20 +75,13 @@ extern "C" {
 
 char FORMAT_TYPE[16];
 
-//#define HDF5_COMPRESSION
-//#define HDF5_HAVE_MULTI_DATASETS
-#ifdef HDF5_HAVE_MULTI_DATASETS
-H5D_rw_multi_t multi_info[9];
-#endif
-
-char red[] = { 0x1b, '[', '1', ';', '3', '1', 'm', 0 };
-char green[] = { 0x1b, '[', '1', ';', '3', '2', 'm', 0 };
-char nc[] = { 0x1b, '[', '0', ';', '3', '9', 'm', 0 };
-
-// COMPOUND TYPE METHOD
 #ifdef GENERICIO_HAVE_HDF
-//#define HDF5_DERV
-//#ifdef HDF5_DERV
+
+typedef struct crc_s {
+  uint64_t CRC64;
+  size_t  CRC64_size;
+} crc;
+
 typedef struct {
   int64_t id;
   uint16_t mask;
@@ -105,15 +98,18 @@ hid_t Hmemtype;
 hid_t Hfiletype;
 
 uint64_t CRC_values[9];
-//char FORMAT_TYPE[] = "HDF5_DERV";
-//#else
-//char FORMAT_TYPE[] = "HDF5";
-//#endif
 
-//#else
-//char FORMAT_TYPE[] = "MPI IO";
+//#define HDF5_COMPRESSION
+//#define HDF5_HAVE_MULTI_DATASETS
+#ifdef HDF5_HAVE_MULTI_DATASETS
+H5D_rw_multi_t multi_info[9];
+#endif
 
 #endif
+
+char red[] = { 0x1b, '[', '1', ';', '3', '1', 'm', 0 };
+char green[] = { 0x1b, '[', '1', ';', '3', '2', 'm', 0 };
+char nc[] = { 0x1b, '[', '0', ';', '3', '9', 'm', 0 };
 
 using namespace std;
 
