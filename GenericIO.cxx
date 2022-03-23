@@ -2014,6 +2014,7 @@ nocomp:
   FH.get()->open(LocalFileName);
 
   uint64_t Offset = RHLocal.Start;
+
 #ifdef GENERICIO_HAVE_HDF
   GenericFileIO_HDF *gfio_hdf;
 
@@ -2165,7 +2166,7 @@ nocomp:
 	delete sbufv;
 	MPI_Type_free(&mpi_crc_type);
 
-if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
+        if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
   //#ifdef HDF5_DERV
 	hsize_t ii;
 	if( Vars[i].Name.compare("id") == 0) {
