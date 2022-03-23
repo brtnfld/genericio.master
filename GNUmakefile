@@ -42,7 +42,7 @@ CXX = mpicxx
 MPICC = mpicc
 MPICXX = mpicxx
 
-ifeq ($(HDF5_DIR), "")
+ifeq ($(HDF5_DIR),)
   HDF_DIR = $(HOME)/packages/hdf5/build/hdf5
 endif
 
