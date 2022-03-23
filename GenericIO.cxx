@@ -263,7 +263,20 @@ void GenericFileIO_HDF::open(const std::string &FN, bool ForReading) {
   /* Transactions  */
   int commRank;
 
-  strcpy(FORMAT_TYPE, "HDF5");
+  const char *EnvStr = getenv("GENERICIO_USE_MPIIO");
+  if (EnvStr && string(EnvStr) == "1") {
+    strcpy(FORMAT_TYPE, "MPI IO");
+  }
+  EnvStr = getenv("GENERICIO_USE_HDF");
+  if (EnvStr && string(EnvStr) == "1") {
+    strcpy(FORMAT_TYPE, "HDF5");
+  }
+  EnvStr = getenv("GENERICIO_USE_HDF_COMPOUND");
+  if (EnvStr && string(EnvStr) == "1") {
+    strcpy(FORMAT_TYPE, "HDF5 COMPOUND");
+  }
+  if(FORMAT_TYPE[0] == '\0')
+    strcpy(FORMAT_TYPE, "MPI IO");
 
   MPI_Comm_rank(Comm, &commRank);
   //MPI_Comm_rank(MPI_COMM_WORLD, &commRank);
