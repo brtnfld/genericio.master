@@ -329,13 +329,11 @@ void GenericFileIO_HDF::open(const std::string &FN, bool ForReading) {
 
   if ( ForReading ) {
     // get size
-    //#ifdef HDF5_DERV
-if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
-    dset  = H5Dopen (fid, "/Variables/DATA", H5P_DEFAULT);
-else
-  //#else
-    dset  = H5Dopen (fid, "/Variables/id", H5P_DEFAULT);
-//#endif
+    if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
+      dset  = H5Dopen (fid, "/Variables/DATA", H5P_DEFAULT);
+    else
+      dset  = H5Dopen (fid, "/Variables/id", H5P_DEFAULT);
+
     space = H5Dget_space (dset);
     ndims = H5Sget_simple_extent_dims (space, dims, NULL);
 
@@ -1020,153 +1018,147 @@ void GenericIO::write_hdf() {
           //  cout << "CRC_sum2 " << CRC << endl;
 	  Offsets_glb = Offsets;
 
-          //#ifdef HDF5_DERV
-  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
-	  hsize_t ii;
-	  if( Vars[i].Name.compare("id") == 0) {
-	    for (ii=0; ii < NElems; ii++)
-	      Hdata[ii].id = *((int64_t *)Data + ii);
-	    CRC_values[0] = CRC;
-	  } else if( Vars[i].Name.compare("mask") == 0) {
-	    for (ii=0; ii < NElems; ii++)
-	      Hdata[ii].mask = *((uint16_t *)Data + ii);
-	    CRC_values[1] = CRC;
-	  } else if( Vars[i].Name.compare("x") == 0) {
-	    for (ii=0; ii < NElems; ii++)
-	      Hdata[ii].x = *((float *)Data + ii);
-	    CRC_values[2] = CRC;
-	  } else if( Vars[i].Name.compare("y") == 0) {
-	    for (ii=0; ii < NElems; ii++)
-	      Hdata[ii].y = *((float *)Data + ii);
-	    CRC_values[3] = CRC;
-	  } else if( Vars[i].Name.compare("z") == 0) {
-	    for (ii=0; ii < NElems; ii++)
-	      Hdata[ii].z = *((float *)Data + ii);
-	    CRC_values[4] = CRC;
-	  } else if( Vars[i].Name.compare("vx") == 0) {
-	    for (ii=0; ii < NElems; ii++)
-	      Hdata[ii].vx = *((float *)Data + ii);
-	    CRC_values[5] = CRC;
-	  } else if( Vars[i].Name.compare("vy") == 0) {
-	    for (ii=0; ii < NElems; ii++)
-	      Hdata[ii].vy = *((float *)Data + ii);
-	    CRC_values[6] = CRC;
-	  } else if( Vars[i].Name.compare("vz") == 0) {
-	    for (ii=0; ii < NElems; ii++)
-	      Hdata[ii].vz = *((float *)Data + ii);
-	    CRC_values[7] = CRC;
-	  } else if( Vars[i].Name.compare("phi") == 0) {
-	    for (ii=0; ii < NElems; ii++) 
-	      Hdata[ii].phi = *((float *)Data + ii);
-	    CRC_values[8] = CRC;
-	  }
-  }else {
-    //#else
-	  if( Vars[i].Name.compare("id") == 0) {
-	    dtype = H5T_NATIVE_LONG;
-	  } else if( Vars[i].Name.compare("mask") == 0) {
-	    dtype = H5T_NATIVE_UINT16;
-	  }else {
-	    dtype = H5T_NATIVE_FLOAT;
-	  }
+          if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
+            hsize_t ii;
+            if( Vars[i].Name.compare("id") == 0) {
+              for (ii=0; ii < NElems; ii++)
+                Hdata[ii].id = *((int64_t *)Data + ii);
+              CRC_values[0] = CRC;
+            } else if( Vars[i].Name.compare("mask") == 0) {
+              for (ii=0; ii < NElems; ii++)
+                Hdata[ii].mask = *((uint16_t *)Data + ii);
+              CRC_values[1] = CRC;
+            } else if( Vars[i].Name.compare("x") == 0) {
+              for (ii=0; ii < NElems; ii++)
+                Hdata[ii].x = *((float *)Data + ii);
+              CRC_values[2] = CRC;
+            } else if( Vars[i].Name.compare("y") == 0) {
+              for (ii=0; ii < NElems; ii++)
+                Hdata[ii].y = *((float *)Data + ii);
+              CRC_values[3] = CRC;
+            } else if( Vars[i].Name.compare("z") == 0) {
+              for (ii=0; ii < NElems; ii++)
+                Hdata[ii].z = *((float *)Data + ii);
+              CRC_values[4] = CRC;
+            } else if( Vars[i].Name.compare("vx") == 0) {
+              for (ii=0; ii < NElems; ii++)
+                Hdata[ii].vx = *((float *)Data + ii);
+              CRC_values[5] = CRC;
+            } else if( Vars[i].Name.compare("vy") == 0) {
+              for (ii=0; ii < NElems; ii++)
+                Hdata[ii].vy = *((float *)Data + ii);
+              CRC_values[6] = CRC;
+            } else if( Vars[i].Name.compare("vz") == 0) {
+              for (ii=0; ii < NElems; ii++)
+                Hdata[ii].vz = *((float *)Data + ii);
+              CRC_values[7] = CRC;
+            } else if( Vars[i].Name.compare("phi") == 0) {
+              for (ii=0; ii < NElems; ii++) 
+                Hdata[ii].phi = *((float *)Data + ii);
+              CRC_values[8] = CRC;
+            }
+          }else {
+            if( Vars[i].Name.compare("id") == 0) {
+              dtype = H5T_NATIVE_LONG;
+            } else if( Vars[i].Name.compare("mask") == 0) {
+              dtype = H5T_NATIVE_UINT16;
+            }else {
+              dtype = H5T_NATIVE_FLOAT;
+            }
 	
-	  gfio_hdf->write_hdf_internal(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, chunk_size,&CRC, gid, TotElem, i);
-  }
-  //#endif
+            gfio_hdf->write_hdf_internal(Data, WriteSize, Offsets , Vars[i].Name, dtype, NElems, chunk_size,&CRC, gid, TotElem, i);
+          }
     }
   }
 
-  //#ifdef HDF5_DERV
-if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
-  if (FileIOType == FileIOHDF) {
-   /*
-     * Create dataspace.  Setting maximum size to NULL sets the maximum
-     * size to be the current size.
-     */
-    hid_t filespace, memspace, dset, plist_id;
-    hsize_t     dims[1];
-    dims[0] = (hsize_t)TotElem;
-    filespace = H5Screate_simple (1, dims, NULL);
-
-    /*
-     * Create the dataset and write the compound data to it.
-     */
+  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
+    if (FileIOType == FileIOHDF) {
+      /*
+       * Create dataspace.  Setting maximum size to NULL sets the maximum
+       * size to be the current size.
+       */
+      hid_t filespace, memspace, dset, plist_id;
+      hsize_t     dims[1];
+      dims[0] = (hsize_t)TotElem;
+      filespace = H5Screate_simple (1, dims, NULL);
+      
+      /*
+       * Create the dataset and write the compound data to it.
+       */
 #ifdef HDF5_COMPRESSION
-  hid_t dset_creation_plist;
-  hsize_t chunk_dims1[1];
-  chunk_dims1[0] = chunk_size; 
-  dset_creation_plist = H5Pcreate(H5P_DATASET_CREATE);
-
-  H5Pset_chunk(dset_creation_plist,1,chunk_dims1);
-
-  H5Pset_deflate(dset_creation_plist,6);
- 
-  //if( (dataset = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, dset_creation_plist, H5P_DEFAULT)) < 0)
-  if((dset = H5Dcreate (gid, "DATA", Hmemtype, filespace, H5P_DEFAULT, dset_creation_plist, H5P_DEFAULT))<0)
-     throw runtime_error( "Unable to create HDF5 dataset " );
-  H5Pclose(dset_creation_plist);
-
-
+      hid_t dset_creation_plist;
+      hsize_t chunk_dims1[1];
+      chunk_dims1[0] = chunk_size; 
+      dset_creation_plist = H5Pcreate(H5P_DATASET_CREATE);
+      
+      H5Pset_chunk(dset_creation_plist,1,chunk_dims1);
+      
+      H5Pset_deflate(dset_creation_plist,6);
+      
+      //if( (dataset = H5Dcreate2(gid, c_str, dtype, sid, H5P_DEFAULT, dset_creation_plist, H5P_DEFAULT)) < 0)
+      if((dset = H5Dcreate (gid, "DATA", Hmemtype, filespace, H5P_DEFAULT, dset_creation_plist, H5P_DEFAULT))<0)
+        throw runtime_error( "Unable to create HDF5 dataset " );
+      H5Pclose(dset_creation_plist);
+      
+      
 #else
-    dset = H5Dcreate (gid, "DATA", Hmemtype, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+      dset = H5Dcreate (gid, "DATA", Hmemtype, filespace, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
 #endif
-
-    hsize_t count[1];	          /* hyperslab selection parameters */
-    hsize_t offset[1];
-    herr_t status;
-    count[0] = NElems;
-    memspace = H5Screate_simple(1, count, NULL);
-
-    offset[0] = Offsets_glb;
-//cerr<<"mpi_rank is "<<Rank <<" count: "<<count[0] <<"offset "<<offset[0]<<endl;
-
-    H5Sselect_hyperslab(filespace, H5S_SELECT_SET, offset, NULL, count, NULL);
-
-    plist_id = H5Pcreate(H5P_DATASET_XFER);
+      
+      hsize_t count[1];	          /* hyperslab selection parameters */
+      hsize_t offset[1];
+      herr_t status;
+      count[0] = NElems;
+      memspace = H5Screate_simple(1, count, NULL);
+      
+      offset[0] = Offsets_glb;
+      //cerr<<"mpi_rank is "<<Rank <<" count: "<<count[0] <<"offset "<<offset[0]<<endl;
+      
+      H5Sselect_hyperslab(filespace, H5S_SELECT_SET, offset, NULL, count, NULL);
+      
+      plist_id = H5Pcreate(H5P_DATASET_XFER);
 #ifdef HDF5_COMPRESSION
-    H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
+      H5Pset_dxpl_mpio(plist_id, H5FD_MPIO_COLLECTIVE);
 #endif
+      
+      t1 = MPI_Wtime();
+      status = H5Dwrite (dset, Hmemtype, memspace, filespace, plist_id, Hdata);
+      timer = MPI_Wtime()-t1;
+      
+      H5Pclose(plist_id);
+      status = H5Dclose (dset);
+      status = H5Sclose (filespace);
+      status = H5Sclose (memspace);
+      status = H5Tclose (Hmemtype);
+      free(Hdata);
+      
+      // WRITE THE CRC data
 
-    t1 = MPI_Wtime();
-    status = H5Dwrite (dset, Hmemtype, memspace, filespace, plist_id, Hdata);
-    timer = MPI_Wtime()-t1;
-
-    H5Pclose(plist_id);
-    status = H5Dclose (dset);
-    status = H5Sclose (filespace);
-    status = H5Sclose (memspace);
-    status = H5Tclose (Hmemtype);
-    free(Hdata);
-
-    // WRITE THE CRC data
-
-    hsize_t crc_dim[1] = {9};
-    file_dataspace = H5Screate(H5S_SIMPLE);
-    H5Sset_extent_simple(file_dataspace, 1, crc_dim, NULL);
-
-    hid_t dcpl = H5Pcreate (H5P_DATASET_CREATE);
-    //    status = H5Pset_layout (dcpl, H5D_COMPACT);
-
-    dataset = H5Dcreate2(gid, "CRC_id_mask_x_y_z_vx_vy_vz_phi", H5T_NATIVE_ULONG, file_dataspace,
-    			 H5P_DEFAULT, dcpl, H5P_DEFAULT);
-    H5Sclose (file_dataspace);
-    H5Pclose (dcpl);
-
-    t1 = MPI_Wtime();
-    if( Rank == 0 ) {
-      ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, H5S_ALL, H5S_ALL, H5P_DEFAULT, CRC_values);
-    } else {
-      mem_dataspace = H5Screate(H5S_NULL);
-      ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, mem_dataspace, H5P_DEFAULT, NULL);
-      H5Sclose (mem_dataspace);
+      hsize_t crc_dim[1] = {9};
+      file_dataspace = H5Screate(H5S_SIMPLE);
+      H5Sset_extent_simple(file_dataspace, 1, crc_dim, NULL);
+      
+      hid_t dcpl = H5Pcreate (H5P_DATASET_CREATE);
+      //    status = H5Pset_layout (dcpl, H5D_COMPACT);
+      
+      dataset = H5Dcreate2(gid, "CRC_id_mask_x_y_z_vx_vy_vz_phi", H5T_NATIVE_ULONG, file_dataspace,
+                           H5P_DEFAULT, dcpl, H5P_DEFAULT);
+      H5Sclose (file_dataspace);
+      H5Pclose (dcpl);
+      
+      t1 = MPI_Wtime();
+      if( Rank == 0 ) {
+        ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, H5S_ALL, H5S_ALL, H5P_DEFAULT, CRC_values);
+      } else {
+        mem_dataspace = H5Screate(H5S_NULL);
+        ret = H5Dwrite(dataset, H5T_NATIVE_ULONG, mem_dataspace, mem_dataspace, H5P_DEFAULT, NULL);
+        H5Sclose (mem_dataspace);
+      }
+      H5Dclose (dataset);
+      
+      timer += MPI_Wtime()-t1;
     }
-    H5Dclose (dataset);
-    
-    timer += MPI_Wtime()-t1;
   }
- }
-//#endif
-
 
 #ifdef HDF5_HAVE_MULTI_DATASETS
 
@@ -1182,9 +1174,9 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
       H5Pget_mpio_actual_io_mode( plist_id, &actual_io_mode);
       cout << " collective mode " << actual_io_mode << endl; 
     }
-
+    
     H5Pclose(plist_id);
-
+    
     for (size_t i = 0; i < Vars.size(); ++i) {
       H5Dclose(multi_info[i].dset_id);
       H5Sclose(multi_info[i].mem_space_id);
@@ -1192,7 +1184,7 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
     }
   }
 #endif
-
+  
   double mean=0;
   double min;
   double max;
@@ -1202,10 +1194,10 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
   }
   MPI_Gather(&timer, 1, MPI_DOUBLE, rtimers, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
   if(Rank == 0)  {
-
+    
     min = rtimers[0];
     max = min;
-
+    
     for(int n = 1; n < NRanks; n++) {
       if(rtimers[n] > max)
 	max=rtimers[n];
@@ -1215,23 +1207,23 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
     }
     free(rtimers);
   }
-
+  
   if (FileIOType == FileIOHDF)
     ret = H5Gclose(gid);
-
+  
   // Here we want to set the 
   // cout << "Closing up file(s)" << endl;
   close();
   //MPI_Barrier(Comm);
-
+  
   double EndTime = MPI_Wtime();
   double TotalTime = EndTime - StartTime;
   double MaxTotalTime;
-
+  
   MPI_Reduce(&TotalTime, &MaxTotalTime, 1, MPI_DOUBLE, MPI_MAX, 0, Comm);
-
+  
   const char *EnvStr = getenv("HDF5_VOL_CONNECTOR");
-
+  
   if (EnvStr != NULL) {
     if (Rank == 0) {
       if (strstr(EnvStr, "daos")) {
@@ -1240,12 +1232,12 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
       }
     }
   } else {
-
+    
     hid_t fid2 = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
     
     if (Rank == 0) {
       // Obtain file size, this is just for benchmarking purpose.We can set the file size to genericIO by using H5Fgetsize.
-
+      
       if(fid2 <0)
         throw runtime_error( ("Unable to open the file: ") + FileName);
       
@@ -1267,13 +1259,13 @@ if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0) {
     }
     H5Fclose(fid2);
   }
-
+  
   return;
 }
-// Note: writing errors are not currently recoverable (one rank may fail
-// while the others don't).
-// Uncomment or comment this line for debugging
-//#if 0
+  // Note: writing errors are not currently recoverable (one rank may fail
+  // while the others don't).
+  // Uncomment or comment this line for debugging
+  //#if 0
 template <bool IsBigEndian>
 void GenericIO::write() {
 
@@ -2073,32 +2065,31 @@ nocomp:
 
 
   }
-#endif
-if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
-  //#ifdef HDF5_DERV
-  Hdata = (hacc_t *) malloc (NElems * sizeof (hacc_t));
 
+  if(strcmp(FORMAT_TYPE,"HDF5 COMPOUND") == 0)
+    Hdata = (hacc_t *) malloc (NElems * sizeof (hacc_t));
+  
   Hmemtype = H5Tcreate (H5T_COMPOUND, sizeof (hacc_t));
   H5Tinsert (Hmemtype, "id",
-		      HOFFSET (hacc_t, id), H5T_NATIVE_LONG);
+             HOFFSET (hacc_t, id), H5T_NATIVE_LONG);
   H5Tinsert (Hmemtype, "mask", 
-		      HOFFSET (hacc_t, mask), H5T_NATIVE_UINT16);
+             HOFFSET (hacc_t, mask), H5T_NATIVE_UINT16);
   H5Tinsert (Hmemtype, "x",
-		      HOFFSET (hacc_t, x), H5T_NATIVE_FLOAT);
+             HOFFSET (hacc_t, x), H5T_NATIVE_FLOAT);
   H5Tinsert (Hmemtype, "y",
-		      HOFFSET (hacc_t, y), H5T_NATIVE_FLOAT);
+             HOFFSET (hacc_t, y), H5T_NATIVE_FLOAT);
   H5Tinsert (Hmemtype, "z",
-		      HOFFSET (hacc_t, z), H5T_NATIVE_FLOAT);
+             HOFFSET (hacc_t, z), H5T_NATIVE_FLOAT);
   H5Tinsert (Hmemtype, "vx",
-		      HOFFSET (hacc_t, vx), H5T_NATIVE_FLOAT);
+             HOFFSET (hacc_t, vx), H5T_NATIVE_FLOAT);
   H5Tinsert (Hmemtype, "vy",
-		      HOFFSET (hacc_t, vy), H5T_NATIVE_FLOAT);
+             HOFFSET (hacc_t, vy), H5T_NATIVE_FLOAT);
   H5Tinsert (Hmemtype, "vz",
-		      HOFFSET (hacc_t, vz), H5T_NATIVE_FLOAT);
+             HOFFSET (hacc_t, vz), H5T_NATIVE_FLOAT);
   H5Tinsert (Hmemtype, "phi",
-		      HOFFSET (hacc_t, phi), H5T_NATIVE_FLOAT);
+             HOFFSET (hacc_t, phi), H5T_NATIVE_FLOAT);
 }
-  //#endif
+#endif
 
   uint64_t Offsets_glb;
 	
