@@ -107,7 +107,7 @@ hid_t Hfiletype;
 uint64_t CRC_values[9];
 //char FORMAT_TYPE[] = "HDF5_DERV";
 //#else
-char FORMAT_TYPE[] = "HDF5";
+//char FORMAT_TYPE[] = "HDF5";
 //#endif
 
 //#else
