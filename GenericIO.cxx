@@ -1226,10 +1226,8 @@ void GenericIO::write_hdf() {
   
   if (EnvStr != NULL) {
     if (Rank == 0) {
-      if (strstr(EnvStr, "daos")) {
         cout << NRanks << " Wrote " << FORMAT_TYPE  << " " << Vars.size() << " variables to " << FileName <<
           " in " << MaxTotalTime << "s" << endl;
-      }
     }
   } else {
     
