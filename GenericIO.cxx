@@ -73,6 +73,13 @@ extern "C" {
 #define MPI_UINT64_T (sizeof(long) == 8 ? MPI_LONG : MPI_LONG_LONG)
 #endif
 
+#define H5_HAVE_SUBFILING_VFD
+#ifdef H5_HAVE_SUBFILING_VFD
+#include "H5FDsubfiling.h" /* Private header for the subfiling VFD */
+#include "H5FDioc.h"
+#endif
+
+
 char FORMAT_TYPE[16];
 
 #ifdef GENERICIO_HAVE_HDF
@@ -284,10 +291,16 @@ void GenericFileIO_HDF::open(const std::string &FN, bool ForReading) {
 
   // setup file access template with parallel IO access.
   fapl_id = H5Pcreate (H5P_FILE_ACCESS);
-  //ret = H5Pset_fapl_mpiposix(fapl_id, Comm, 0); 
-  ret = H5Pset_fapl_mpio(fapl_id, Comm, info);
-  H5Pset_coll_metadata_write(fapl_id, 1);
-  H5Pset_all_coll_metadata_ops(fapl_id, 1);
+  //ret = H5Pset_fapl_mpiposix(fapl_id, Comm, 0);
+  const char *EnvStr = getenv("SUBF");
+  if (EnvStr && string(EnvStr) == "1") {
+    H5Pset_mpi_params(fapl_id, Comm, info);
+    H5Pset_fapl_subfiling(fapl_id, NULL);
+  } else {
+    ret = H5Pset_fapl_mpio(fapl_id, Comm, info);
+    H5Pset_coll_metadata_write(fapl_id, 1);
+    H5Pset_all_coll_metadata_ops(fapl_id, 1);
+  }
   H5Pset_libver_bounds(fapl_id, H5F_LIBVER_LATEST, H5F_LIBVER_LATEST);
   H5Pset_fclose_degree(fapl_id,H5F_CLOSE_WEAK);
   fcpl_id = H5Pcreate(H5P_FILE_CREATE);
