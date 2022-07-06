@@ -43,7 +43,8 @@ MPICC = mpicc
 MPICXX = mpicxx
 
 ifeq ($(HDF5_DIR),)
-  HDF_DIR = $(HOME)/packages/hdf5/build/hdf5
+#  HDF_DIR = $(HOME)/packages/hdf5/build/hdf5
+   HDF_DIR = $(HOME)/packages/hdf5/build.$(UNAME)/hdf5
 endif
 
 #ZLIB_DIR = $(HOME)/packages/zlib-1.2.8/zlib$(TYPE)/lib
@@ -53,6 +54,7 @@ endif
 FE_CFLAGS = -fPIC
 HOST=$(shell uname -n | sed 's/[0-9]*//g')
 ifeq ($(HOST), cori)
+   HDF_DIR = $(HOME)/packages/hdf5/build.$(HOST)/hdf5
    CC  = cc
    CXX = CC
    MPICC = cc
