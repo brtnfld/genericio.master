@@ -52,9 +52,8 @@ endif
 #TYPE=".intel"
 
 FE_CFLAGS = -fPIC
-HOST=$(shell uname -n | sed 's/[0-9]*//g')
-ifeq ($(HOST), cori)
-   HDF_DIR = $(HOME)/packages/hdf5/build.$(HOST)/hdf5
+ifneq ($(NERSC_HOST), "")
+   HDF_DIR = $(HOME)/packages/hdf5/build.$(NERSC_HOST)/hdf5
    CC  = cc
    CXX = CC
    MPICC = cc

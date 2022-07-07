@@ -292,7 +292,7 @@ void GenericFileIO_HDF::open(const std::string &FN, bool ForReading) {
   //ret = H5Pset_fapl_mpiposix(fapl_id, Comm, 0);
   EnvStr = getenv("SUBF");
   if (EnvStr && string(EnvStr) == "1") {
-    H5Pset_mpi_params(fapl_id, Comm, info);
+    H5Pset_mpi_params(fapl_id, MPI_COMM_WORLD, info);
     H5Pset_fapl_subfiling(fapl_id, NULL);
   } else {
     ret = H5Pset_fapl_mpio(fapl_id, Comm, info);
@@ -586,7 +586,6 @@ void GenericFileIO_HDF::write_hdf_internal(const void *buf, size_t count, uint64
   // Create the CRC dataset
   //
 
-#if 1
 
   file_dataspace = H5Screate(H5S_SCALAR);
   dataset = H5Dcreate2(gid, c_str3, H5T_NATIVE_ULONG, file_dataspace,
@@ -605,7 +604,6 @@ void GenericFileIO_HDF::write_hdf_internal(const void *buf, size_t count, uint64
   H5Sclose (mem_dataspace);
   H5Sclose (file_dataspace);
   H5Dclose (dataset);
-#endif 
 }
 
 void GenericFileIO_HDFCollective::read(void *buf, size_t count, off_t offset,
@@ -1232,17 +1230,23 @@ void GenericIO::write_hdf() {
   double MaxTotalTime;
   
   MPI_Reduce(&TotalTime, &MaxTotalTime, 1, MPI_DOUBLE, MPI_MAX, 0, Comm);
-  
+
   const char *EnvStr = getenv("HDF5_VOL_CONNECTOR");
-  
   if (EnvStr != NULL) {
     if (Rank == 0) {
         cout << NRanks << " Wrote " << FORMAT_TYPE  << " " << Vars.size() << " variables to " << FileName <<
           " in " << MaxTotalTime << "s" << endl;
     }
   } else {
-    
-    hid_t fid2 = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,H5P_DEFAULT);
+    fapl_id = H5Pcreate (H5P_FILE_ACCESS);
+    EnvStr = getenv("SUBF");
+    if (EnvStr && string(EnvStr) == "1") {
+      H5Pset_mpi_params(fapl_id, Comm, MPI_INFO_NULL);
+      H5Pset_fapl_subfiling(fapl_id, NULL);
+    }
+ 
+    hid_t fid2 = H5Fopen( const_cast<char *>(FileName.c_str()),H5F_ACC_RDONLY,fapl_id);
+    H5Pclose(fapl_id);
     
     if (Rank == 0) {
       // Obtain file size, this is just for benchmarking purpose.We can set the file size to genericIO by using H5Fgetsize.
@@ -1252,7 +1256,8 @@ void GenericIO::write_hdf() {
       
       hsize_t h5_filesize=0;
       if(H5Fget_filesize(fid2,&h5_filesize)<0) {
-        H5Fclose(fid2);
+     //   H5Fclose(fid2);
+
         throw runtime_error( ("Unable to obtain the HDF5 file size: ") + FileName);
       }
       //#if defined(HDF5_DERV) || defined(HDF5_HAVE_MULTI_DATASETS)        
@@ -1268,7 +1273,7 @@ void GenericIO::write_hdf() {
     }
     H5Fclose(fid2);
   }
-  
+
   return;
 }
   // Note: writing errors are not currently recoverable (one rank may fail
@@ -3445,7 +3450,6 @@ void GenericIO::readDataHDF(int EffRank, bool PrintStats, bool CollStats) {
        
        //  cout << "2H5Dread" << ret << endl;
        
-#if 1
        hid_t attr_id = H5Dopen(fid, c_str3, H5P_DEFAULT);
        file_dataspace_CRC = H5Dget_space(attr_id);
        
@@ -3511,7 +3515,6 @@ void GenericIO::readDataHDF(int EffRank, bool PrintStats, bool CollStats) {
        //       if(Rank==0) printf("PASSED \n",c_str3);
        //       }
        MPI_Type_free(&mpi_crc_type);
-#endif
        Data = NULL;
      }
      

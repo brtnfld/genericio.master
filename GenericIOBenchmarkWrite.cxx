@@ -93,8 +93,15 @@ struct Generator<pos_t> {
 };
 
 int main(int argc, char *argv[]) {
-  int mpi_provides, require = MPI_THREAD_MULTIPLE;
-  MPI_Init_thread(&argc, &argv, require, &mpi_provides);
+ 
+  int provided, required = MPI_THREAD_MULTIPLE;
+  MPI_Init_thread(&argc, &argv, required, &provided);
+
+ if (provided < required) {
+     printf("MPI_THREAD_MULTIPLE not supported\n");
+     MPI_Abort(MPI_COMM_WORLD, -1);
+  }
+
   // MPI_Init(&argc, &argv);
 
   int commRank, commRanks;
