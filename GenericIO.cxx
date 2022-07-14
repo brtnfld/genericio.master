@@ -1307,7 +1307,8 @@ void GenericIO::write() {
 #ifdef __bgq__
   MPI_Barrier(Comm);
 #endif
-  Partition=0; // MSB disable writing to more than one file **DEBUG**
+  if(true == use_hdf5)
+    Partition=0; // MSB disable writing to more than one file **DEBUG**
   MPI_Comm_split(Comm, Partition, Rank, &SplitComm);
 
   int SplitNRanks, SplitRank;
@@ -3857,7 +3858,7 @@ void GenericIO::setNaturalDefaultPartition() {
   DefaultPartition = MPIX_IO_link_id();
 #else
 #ifndef GENERICIO_NO_MPI
-  bool UseName = true;
+  bool UseName = false; // MSB true;
   const char *EnvStr = getenv("GENERICIO_PARTITIONS_USE_NAME");
   if (EnvStr) {
     int Mod = atoi(EnvStr);
@@ -3883,9 +3884,17 @@ void GenericIO::setNaturalDefaultPartition() {
   if (EnvStr) {
     int Mod = atoi(EnvStr);
     if (Mod > 0) {
-      int Rank;
+      int NRanks, Rank;
       MPI_Comm_rank(MPI_COMM_WORLD, &Rank);
-      DefaultPartition += Rank % Mod;
+      MPI_Comm_size(MPI_COMM_WORLD, &NRanks);
+      int block = NRanks/Mod;
+      
+      DefaultPartition = Rank/block;
+
+      //int Rank;
+      //MPI_Comm_rank(MPI_COMM_WORLD, &Rank); 
+      //DefaultPartition += Rank % Mod;
+      //  printf("DefaultPartition %d %d \n",DefaultPartition,Rank);
     }
   }
 #endif
