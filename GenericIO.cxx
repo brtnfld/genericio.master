@@ -299,6 +299,15 @@ void GenericFileIO_HDF::open(const std::string &FN, bool ForReading) {
     H5Pset_coll_metadata_write(fapl_id, 1);
     H5Pset_all_coll_metadata_ops(fapl_id, 1);
   }
+
+ char* EnvStr_align = getenv("ALIGN");
+  if (EnvStr_align && string(EnvStr_align) == "1") {
+    hsize_t align;
+    sscanf(EnvStr_align, "%zu", &align);
+    H5Pset_alignment(fapl_id, 0, align);
+  }
+
+
   H5Pset_libver_bounds(fapl_id, H5F_LIBVER_LATEST, H5F_LIBVER_LATEST);
   H5Pset_fclose_degree(fapl_id,H5F_CLOSE_WEAK);
   fcpl_id = H5Pcreate(H5P_FILE_CREATE);
